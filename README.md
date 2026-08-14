@@ -8,6 +8,13 @@ hands it to your signup flow and records the conversion.
 Pairs with `sparkle/referral-sdk` (PHP backend) and `@sparkle/referral-web`
 (landing page).
 
+> **Looking for app store IDs/links?** They don't belong here — this package
+> only ever runs after your app is already installed, so it never needs to
+> know where to send someone to download it. Set `androidPackage`/`iosAppId`
+> (or `androidStoreUrl`/`iosStoreUrl` to use a full URL as-is) in
+> `@sparkle/referral-web`'s config instead — that's the landing page redirecting
+> not-yet-installed visitors to the right store.
+
 ## Install
 
 This package isn't published to npm yet. Until it is, install it straight
