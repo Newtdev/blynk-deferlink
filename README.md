@@ -23,12 +23,13 @@ from GitHub — same pattern as `react-native-smileid-wrapper`:
 ```bash
 npm install github:Newtdev/blynk-referral#mobile-release react-native-device-info
 
+# Required if you build for Android — see below for why it's not optional:
+npm install react-native-play-install-referrer
+
 # Recommended unless your app already has its own storage engine (MMKV,
 # SQLite, etc.) — see "Storage" below if it does:
 npm install @react-native-async-storage/async-storage
 
-# Android only, for deterministic recovery (optional but recommended):
-npm install react-native-play-install-referrer
 cd ios && pod install
 ```
 
@@ -50,12 +51,21 @@ npm install @sparkle/referral-mobile react-native-device-info
 `react-native-device-info` is a required peer — it's the only source of the
 `device_id` every `/match` and `/claim` request needs (and of iOS fingerprint
 data; iOS has no install-referrer equivalent, so it's load-bearing there, not
-optional). `@react-native-async-storage/async-storage` and
-`react-native-play-install-referrer` are both **optional** peers: without the
-install-referrer package, Android falls back to fingerprint matching like
-iOS; without AsyncStorage, you must supply your own `storageAdapter` (below)
-— the SDK won't silently do nothing, it throws a clear error telling you which
-of the two to do.
+optional).
+
+`react-native-play-install-referrer` is a **required** peer if you build for
+Android — not optional. Install Referrer is deterministic (~100%); fingerprint
+matching is probabilistic and, even with recency scoring, isn't guaranteed to
+clear the match threshold on its own (see "How recovery works" below). Since
+Android has a reliable deterministic path available, there's no reason to
+settle for the weaker one by default. If it's missing, `useReferralCode()`
+throws a clear error rather than silently falling back to fingerprinting — an
+iOS-only build never touches this dependency at all.
+
+`@react-native-async-storage/async-storage` is the one **optional** peer:
+without it, you must supply your own `storageAdapter` (below) — the SDK won't
+silently do nothing there either, it throws a clear error telling you to do
+one or the other.
 
 > Note: earlier versions of this package (and the original project spec)
 > referenced a package named `react-native-android-install-referrer`. That

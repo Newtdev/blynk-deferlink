@@ -29,9 +29,6 @@
     "react-native-play-install-referrer": ">=1.1.0"
   },
   "peerDependenciesMeta": {
-    "react-native-play-install-referrer": {
-      "optional": true
-    },
     "@react-native-async-storage/async-storage": {
       "optional": true
     }
