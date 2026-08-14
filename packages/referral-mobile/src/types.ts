@@ -17,8 +17,12 @@ export interface ReferralStorageAdapter {
 }
 
 export interface ReferralConfig {
-  /** Base URL of the PHP backend, e.g. "https://referal.sparkle.ng/api". */
-  apiEndpoint: string;
+  /**
+   * Base URL of the referral backend. Defaults to the production endpoint
+   * (https://referral-sdk-node.vercel.app/api) — only set this to point at a
+   * staging/local backend instead.
+   */
+  apiEndpoint?: string;
   /** Custom URL scheme without "://", used for deep-link handling. */
   appScheme?: string;
   /** Match window in ms (informational; the server enforces its own). */

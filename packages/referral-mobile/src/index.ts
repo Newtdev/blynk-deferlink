@@ -6,6 +6,7 @@ export { ReferralService } from './ReferralService';
 export type { RecoveryOutcome } from './ReferralService';
 
 export { collectFingerprint } from './fingerprint';
+export { DEFAULT_API_ENDPOINT } from './api';
 export { readInstallReferrer } from './platform/android';
 export { createStorage, defaultAsyncStorageAdapter } from './storage';
 export type { ReferralStorage, StoredReferral } from './storage';
