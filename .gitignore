@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+web-build/
+
+# Expo / React Native
+.expo/
+ios/Pods/
+ios/build/
+ios/DerivedData/
+ios/.xcode.env.local
+*.xcuserstate
+*.xcuserdatad/
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+*.keystore
+!debug.keystore
+
+# Env files (secrets). Package-level .gitignore files may keep specific
+# non-secret files like examples/web/.env.production tracked on purpose.
+.env
+.env.local
+.env.*.local
+
+# Vercel
+.vercel/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Local tooling state
+.claude/
+
+# Logs
+*.log
+npm-debug.log*

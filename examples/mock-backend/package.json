@@ -1,0 +1,7 @@
+{
+  "name": "referral-example-mock-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Zero-dependency mock of the PHP referral backend for local demos.",
+  "scripts": { "start": "node server.js" }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "referral-example-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
+  },
+  "dependencies": {
+    "@sparkle/referral-mobile": "file:../../packages/referral-mobile",
+    "@react-native-async-storage/async-storage": "1.23.1",
+    "expo": "~51.0.0",
+    "expo-dev-client": "~4.0.0",
+    "react": "18.2.0",
+    "react-native": "0.74.5",
+    "react-native-device-info": "^11.1.0"
+  },
+  "optionalDependencies": {
+    "react-native-play-install-referrer": "^1.1.9"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@types/react": "~18.2.45",
+    "typescript": "~5.3.3"
+  }
+}

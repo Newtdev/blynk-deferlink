@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "Referral Example",
+    "slug": "referral-example",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "sparkleapp",
+    "platforms": ["ios", "android"],
+    "android": { "package": "com.sparkle.example" },
+    "ios": { "bundleIdentifier": "com.sparkle.example" }
+  }
+}

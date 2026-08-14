@@ -1,0 +1,5 @@
+{
+  "framework": null,
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
+  "crons": [{ "path": "/api/referral/cleanup", "schedule": "0 3 * * *" }]
+}
