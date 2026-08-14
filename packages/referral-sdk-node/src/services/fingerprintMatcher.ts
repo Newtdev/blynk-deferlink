@@ -12,6 +12,7 @@ export interface StoredClickFingerprint {
   screenHeight: number | null;
   timezone: string | null;
   language: string | null;
+  createdAt: Date;
 }
 
 /** The fingerprint sent by the mobile app on first launch. */
@@ -40,13 +41,18 @@ export interface MatchResult {
  * what counts as a match.
  *
  * Scoring (default weights, configurable via ReferralConfig.scoring):
- *   IP match          +40
+ *   IP match          +25
  *   Device model/UA   +25
  *   Screen dimensions +15
  *   Timezone          +10
  *   Language          +10
+ *   Recency           +15  (graduated — full at the click, 0 at the window edge)
  *   ----------------------
- *   Total possible    100   |   Minimum to match: 70 (IP alone is never enough)
+ *   Total possible    100   |   Minimum to match: 70
+ *
+ * Recency exists so an IP mismatch (network switch between click and
+ * install) doesn't fail the match outright on its own: a fresh, otherwise
+ * clean match can still clear 70 without it.
  */
 export class FingerprintMatcher {
   constructor(
@@ -54,8 +60,12 @@ export class FingerprintMatcher {
     private readonly config: ReferralConfig,
   ) {}
 
-  /** Pure scoring function — no DB, no side effects, safe to unit test directly. */
-  score(stored: StoredClickFingerprint, incoming: IncomingFingerprint): number {
+  /**
+   * Pure scoring function — no DB, no side effects, safe to unit test
+   * directly. `now` defaults to the real current time; tests pass an
+   * explicit value to exercise recency decay deterministically.
+   */
+  score(stored: StoredClickFingerprint, incoming: IncomingFingerprint, now: Date = new Date()): number {
     const w = this.config.scoring;
     let score = 0;
 
@@ -90,7 +100,29 @@ export class FingerprintMatcher {
       score += w.language;
     }
 
+    // --- Recency (graduated) ---
+    score += this.recencyScore(stored, now);
+
     return score;
+  }
+
+  /**
+   * Full credit at the click, decaying linearly to 0 by the edge of the
+   * match window. Clock skew that makes the click look like it's in the
+   * future is clamped to full credit rather than penalized.
+   */
+  private recencyScore(stored: StoredClickFingerprint, now: Date): number {
+    const weight = this.config.scoring.recency;
+    if (!weight) return 0;
+
+    const windowMs = this.config.matchWindowSeconds() * 1000;
+    if (windowMs <= 0) return 0;
+
+    const elapsedMs = now.getTime() - stored.createdAt.getTime();
+    if (elapsedMs <= 0) return weight;
+    if (elapsedMs >= windowMs) return 0;
+
+    return weight * (1 - elapsedMs / windowMs);
   }
 
   /** Find the best matching unclaimed click for a device, within the match window. */
@@ -108,6 +140,7 @@ export class FingerprintMatcher {
         screenHeight: referralClicks.screenHeight,
         timezone: referralClicks.timezone,
         language: referralClicks.language,
+        createdAt: referralClicks.createdAt,
       })
       .from(referralClicks)
       .where(
