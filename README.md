@@ -1,0 +1,164 @@
+# @sparkle/referral-mobile
+
+React Native half of the deferred deep linking referral system. On first launch
+it recovers the referral code the user came in with — deterministically on
+Android via the Play Install Referrer, and via fingerprint matching on iOS — then
+hands it to your signup flow and records the conversion.
+
+Pairs with `sparkle/referral-sdk` (PHP backend) and `@sparkle/referral-web`
+(landing page).
+
+## Install
+
+```bash
+npm install @sparkle/referral-mobile react-native-device-info
+
+# Recommended unless your app already has its own storage engine (MMKV,
+# SQLite, etc.) — see "Storage" below if it does:
+npm install @react-native-async-storage/async-storage
+
+# Android only, for deterministic recovery (optional but recommended):
+npm install react-native-play-install-referrer
+cd ios && pod install
+```
+
+`react-native-device-info` is a required peer — it's the only source of the
+`device_id` every `/match` and `/claim` request needs (and of iOS fingerprint
+data; iOS has no install-referrer equivalent, so it's load-bearing there, not
+optional). `@react-native-async-storage/async-storage` and
+`react-native-play-install-referrer` are both **optional** peers: without the
+install-referrer package, Android falls back to fingerprint matching like
+iOS; without AsyncStorage, you must supply your own `storageAdapter` (below)
+— the SDK won't silently do nothing, it throws a clear error telling you which
+of the two to do.
+
+> Note: earlier versions of this package (and the original project spec)
+> referenced a package named `react-native-android-install-referrer`. That
+> name was never published to npm — it 404s. `react-native-play-install-referrer`
+> is the real, maintained package this SDK now actually uses under the hood
+> ([src/platform/android.ts](src/platform/android.ts)); if you installed the
+> old name, swap it for this one.
+
+## Quick start
+
+Wrap your app once:
+
+```tsx
+import { ReferralProvider } from '@sparkle/referral-mobile';
+
+const referralConfig = {
+  apiEndpoint: 'https://referal.sparkle.ng/api',
+  appScheme: 'sparkleapp',
+  matchTimeoutMs: 5000,
+  onCodeFound: (code, method) => console.log('recovered', code, 'via', method),
+};
+
+export default function App() {
+  return (
+    <ReferralProvider config={referralConfig}>
+      <NavigationContainer>{/* … */}</NavigationContainer>
+    </ReferralProvider>
+  );
+}
+```
+
+Then use the hook on your signup / onboarding screen:
+
+```tsx
+import { useReferralCode } from '@sparkle/referral-mobile';
+
+function SignupScreen() {
+  const { code, loading, method, claim } = useReferralCode();
+
+  const onSignup = async (userId: string) => {
+    if (code) await claim(userId); // records the conversion + reward
+  };
+
+  return (
+    <View>
+      <TextInput
+        value={code ?? ''}
+        editable={!code}                 // lock when auto-detected
+        placeholder="Referral code (optional)"
+      />
+      {code ? <Text>🎁 Referral bonus will be applied</Text> : null}
+    </View>
+  );
+}
+```
+
+## How recovery works
+
+```
+First launch → useReferralCode()
+│
+├─ Already processed? → return the stored result (no network)
+│
+├─ Android:
+│   ├─ Read Install Referrer → parse code   → method: install_referrer
+│   └─ Empty referrer → fingerprint match    → method: fingerprint
+│
+└─ iOS:
+    └─ Fingerprint match (POST /referral/match) → method: fingerprint
+```
+
+Recovery runs **once per install** — the result is cached via your storage
+adapter (AsyncStorage by default), so mounting the hook on several screens is
+safe. A conversion is recorded once per device; a second `claim()` returns
+`already_claimed`.
+
+## Storage
+
+By default, the recovered code and the "already ran" flag are persisted with
+a lazily-loaded `@react-native-async-storage/async-storage`. If your app
+already has its own storage engine, there's no need to also install and ship
+AsyncStorage — pass a `storageAdapter` instead. The contract is the smallest
+possible key/value shape (the same one `redux-persist` uses for this exact
+reason), so wrapping anything else is a few lines:
+
+```tsx
+import { MMKV } from 'react-native-mmkv';
+import type { ReferralStorageAdapter } from '@sparkle/referral-mobile';
+
+const mmkv = new MMKV();
+
+const mmkvAdapter: ReferralStorageAdapter = {
+  getItem: async (key) => mmkv.getString(key) ?? null,
+  setItem: async (key, value) => mmkv.set(key, value),
+  removeItem: async (key) => mmkv.delete(key),
+};
+
+const referralConfig = {
+  apiEndpoint: 'https://referal.sparkle.ng/api',
+  storageAdapter: mmkvAdapter,
+  // ...
+};
+```
+
+With `storageAdapter` set, `@react-native-async-storage/async-storage` never
+needs to be installed at all — one storage engine in your app, not two, and
+one less native dependency's version to keep compatible with the rest of
+your project.
+
+## Manual fallback
+
+If a match fails (common when an iOS user switches networks between click and
+install), `code` is `null`. Keep the referral field editable so the user can
+type the code from the landing page by hand.
+
+## Config reference
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `apiEndpoint` | yes | Base URL of the PHP backend. |
+| `appScheme` | no | Custom scheme for deep-link handling. |
+| `matchTimeoutMs` | no | Max wait for the match request (default 5000). |
+| `matchWindow` / `minConfidence` | no | Informational; the server enforces both. |
+| `storageAdapter` | no | Custom persistence (MMKV, SQLite, etc). Defaults to AsyncStorage. See "Storage" above. |
+| `onCodeFound` / `onNoCode` | no | Recovery callbacks. |
+
+## Build
+
+```bash
+npm install && npm run build   # emits ESM + CJS + .d.ts to dist/
+```

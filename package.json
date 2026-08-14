@@ -1,0 +1,47 @@
+{
+  "name": "@sparkle/referral-mobile",
+  "version": "1.0.0",
+  "description": "Deferred deep linking referral SDK for React Native — Install Referrer (Android) + fingerprint match (iOS) code recovery.",
+  "license": "MIT",
+  "keywords": ["referral", "deep-linking", "deferred", "react-native", "install-referrer", "attribution"],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "react-native": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist", "src", "react-native.config.js"],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "react": ">=17",
+    "react-native": ">=0.68",
+    "react-native-device-info": ">=10.0.0",
+    "@react-native-async-storage/async-storage": ">=1.17.0",
+    "react-native-play-install-referrer": ">=1.1.0"
+  },
+  "peerDependenciesMeta": {
+    "react-native-play-install-referrer": {
+      "optional": true
+    },
+    "@react-native-async-storage/async-storage": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
