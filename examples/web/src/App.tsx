@@ -12,11 +12,21 @@ const config = {
 };
 
 function readCode(): string {
-  // Supports both ?code=1234 and the spec's /code=1234 shape.
+  // Supports ?code=1234, the spec's /code=1234 shape, and /referral/1234
+  // (the real shape production referral links use).
   const params = new URLSearchParams(window.location.search);
   if (params.get('code')) return params.get('code')!;
-  const m = window.location.pathname.match(/code=([^/&]+)/);
-  return m ? decodeURIComponent(m[1]) : '1234';
+  const codeEq = /code=([^/&]+)/.exec(window.location.pathname);
+  if (codeEq) return decodeURIComponent(codeEq[1]);
+  const referralPath = /\/referral\/([^/&]+)/.exec(window.location.pathname);
+  if (referralPath) return decodeURIComponent(referralPath[1]);
+  // No code found in the URL at all — falling back to a placeholder masks
+  // real bugs (a mismatched route silently "succeeds" against whatever code
+  // happens to exist in the DB), so make it loud instead of silent.
+  console.warn(
+    `No referral code found in URL (${window.location.href}); falling back to placeholder "1234".`,
+  );
+  return '1234';
 }
 
 export function App() {
