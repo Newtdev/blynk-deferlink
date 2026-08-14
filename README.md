@@ -72,7 +72,8 @@ Wrap your app once:
 import { ReferralProvider } from '@sparkle/referral-mobile';
 
 const referralConfig = {
-  apiEndpoint: 'https://referal.sparkle.ng/api',
+  // apiEndpoint defaults to the production backend — omit it entirely unless
+  // you're pointing at a staging/local server instead.
   appScheme: 'sparkleapp',
   matchTimeoutMs: 5000,
   onCodeFound: (code, method) => console.log('recovered', code, 'via', method),
@@ -154,7 +155,6 @@ const mmkvAdapter: ReferralStorageAdapter = {
 };
 
 const referralConfig = {
-  apiEndpoint: 'https://referal.sparkle.ng/api',
   storageAdapter: mmkvAdapter,
   // ...
 };
@@ -175,7 +175,7 @@ type the code from the landing page by hand.
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `apiEndpoint` | yes | Base URL of the PHP backend. |
+| `apiEndpoint` | no | Base URL of the referral backend. Defaults to the production endpoint (`https://referral-sdk-node.vercel.app/api`); override only for staging/local. |
 | `appScheme` | no | Custom scheme for deep-link handling. |
 | `matchTimeoutMs` | no | Max wait for the match request (default 5000). |
 | `matchWindow` / `minConfidence` | no | Informational; the server enforces both. |

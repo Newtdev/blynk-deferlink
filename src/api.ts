@@ -27,8 +27,11 @@ async function postJson<T>(
   }
 }
 
+/** Production backend — used whenever a project doesn't override apiEndpoint. */
+export const DEFAULT_API_ENDPOINT = 'https://referral-sdk-node.vercel.app/api';
+
 export function createApi(config: ReferralConfig) {
-  const base = config.apiEndpoint.replace(/\/$/, '');
+  const base = (config.apiEndpoint ?? DEFAULT_API_ENDPOINT).replace(/\/$/, '');
   const timeout = config.matchTimeoutMs ?? 5000;
 
   return {
