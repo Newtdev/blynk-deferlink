@@ -10,8 +10,11 @@ Pairs with `sparkle/referral-sdk` (PHP backend) and `@sparkle/referral-web`
 
 ## Install
 
+This package isn't published to npm yet. Until it is, install it straight
+from GitHub — same pattern as `react-native-smileid-wrapper`:
+
 ```bash
-npm install @sparkle/referral-mobile react-native-device-info
+npm install github:Newtdev/blynk-referral#mobile-release react-native-device-info
 
 # Recommended unless your app already has its own storage engine (MMKV,
 # SQLite, etc.) — see "Storage" below if it does:
@@ -20,6 +23,21 @@ npm install @react-native-async-storage/async-storage
 # Android only, for deterministic recovery (optional but recommended):
 npm install react-native-play-install-referrer
 cd ios && pod install
+```
+
+npm reads the package's real name (`@sparkle/referral-mobile`) out of its
+`package.json`, so it lands in your `dependencies` as
+`"@sparkle/referral-mobile": "github:Newtdev/blynk-referral#mobile-release"`
+and imports work exactly like a normal published package — no source changes
+needed later.
+
+`mobile-release` is a filtered branch containing just this package (kept in
+sync with `packages/referral-mobile` on `main`); it installs straight from
+TypeScript source via the `react-native` field in `package.json`, no build
+step required. Once this is published to npm, switch the first line to:
+
+```bash
+npm install @sparkle/referral-mobile react-native-device-info
 ```
 
 `react-native-device-info` is a required peer — it's the only source of the
