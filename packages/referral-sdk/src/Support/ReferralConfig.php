@@ -34,11 +34,15 @@ final class ReferralConfig
 
         $scoring = (array) ($c['scoring'] ?? []);
         $this->scoring = [
-            'ip_match'          => (int) ($scoring['ip_match'] ?? 40),
+            // Lowered from 40 now that recency picks up the slack — a
+            // network switch between click and install no longer fails
+            // the match outright.
+            'ip_match'          => (int) ($scoring['ip_match'] ?? 25),
             'device_model'      => (int) ($scoring['device_model'] ?? 25),
             'screen_dimensions' => (int) ($scoring['screen_dimensions'] ?? 15),
             'timezone'          => (int) ($scoring['timezone'] ?? 10),
             'language'          => (int) ($scoring['language'] ?? 10),
+            'recency'           => (int) ($scoring['recency'] ?? 15),
         ];
 
         $rewards = (array) ($c['rewards'] ?? []);

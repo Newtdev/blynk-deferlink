@@ -4,6 +4,9 @@ import type { DeviceFingerprint } from '../types';
  * Reads the Google Play Install Referrer and extracts the referral code.
  * This is deterministic (~100%) and requires no network — Google hands the
  * `referrer` string set on the store URL directly to the app after install.
+ * That reliability is why it's required on Android rather than optional:
+ * fingerprint matching is probabilistic (see fingerprintMatcher.ts's scoring
+ * and its recency/IP tradeoffs) and install-referrer sidesteps all of it.
  *
  * Backed by `react-native-play-install-referrer` — a real, published wrapper
  * around Google's Play Install Referrer Library (named export
@@ -15,9 +18,10 @@ import type { DeviceFingerprint } from '../types';
  * for a real consumer; it always silently failed and fell back to
  * fingerprinting. This is the real package.
  *
- * The native module is an optional peer dependency, so it's required
- * lazily; if it's absent we return null and the caller falls back to
- * fingerprinting.
+ * The native module is a required peer dependency (Android only — an iOS-
+ * only consumer never reaches this function). If it isn't installed, that's
+ * a setup mistake worth failing loudly on rather than silently degrading to
+ * the weaker fingerprint path.
  */
 export async function readInstallReferrer(): Promise<string | null> {
   let PlayInstallReferrer: {
@@ -33,7 +37,14 @@ export async function readInstallReferrer(): Promise<string | null> {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     PlayInstallReferrer = require('react-native-play-install-referrer').PlayInstallReferrer;
   } catch {
-    return null;
+    throw new Error(
+      'react-native-play-install-referrer is required on Android but is not ' +
+        "installed. Run `npm install react-native-play-install-referrer` and " +
+        '`cd android && ./gradlew clean` (or rebuild) — it is a required peer ' +
+        'dependency, not optional, because it is the deterministic recovery ' +
+        'path Android relies on to keep match confidence reliable. See the ' +
+        '@sparkle/referral-mobile README.',
+    );
   }
 
   if (!PlayInstallReferrer) return null;

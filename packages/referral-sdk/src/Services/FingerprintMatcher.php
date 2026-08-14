@@ -13,16 +13,20 @@ use Sparkle\Referral\Support\UserAgentParser;
  * best match above the configured confidence threshold.
  *
  * Scoring (default weights, configurable):
- *   IP match          +40
+ *   IP match          +25
  *   Device model/UA   +25
  *   Screen dimensions +15
  *   Timezone          +10
  *   Language          +10
+ *   Recency           +15  (graduated — full at the click, 0 at the window edge)
  *   ----------------------
  *   Total possible    100   |   Minimum to match: 70
  *
- * IP alone (40) is never enough. score() is pure and DB-free so it can be
- * unit-tested directly; match() layers the 48h windowed query on top.
+ * Recency exists so an IP mismatch (network switch between click and
+ * install) doesn't fail the match outright on its own: a fresh, otherwise
+ * clean match can still clear 70 without it. score() is pure and DB-free
+ * so it can be unit-tested directly; match() layers the windowed query on
+ * top.
  */
 final class FingerprintMatcher
 {
@@ -56,7 +60,8 @@ final class FingerprintMatcher
         // Only consider fresh, unmatched clicks. Newest first: last-click-wins on ties.
         $stmt = $this->pdo->prepare(
             'SELECT click_id, referral_code, ip_address, user_agent,
-                    screen_width, screen_height, timezone, language, platform
+                    screen_width, screen_height, timezone, language, platform,
+                    created_at
              FROM referral_clicks
              WHERE matched = 0
                AND expires_at > UTC_TIMESTAMP()
@@ -68,9 +73,10 @@ final class FingerprintMatcher
 
         $best = null;
         $bestScore = 0.0;
+        $now = time();
 
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $score = $this->score($row, $incoming);
+            $score = $this->score($row, $incoming, $now);
             if ($score > $bestScore) {
                 $bestScore = $score;
                 $best = $row;
@@ -93,11 +99,15 @@ final class FingerprintMatcher
      *
      * @param array<string,mixed> $stored   A stored click row.
      * @param array<string,mixed> $incoming The device fingerprint being matched.
+     * @param ?int                $now      Unix timestamp to score recency against.
+     *                                      Defaults to the real current time; tests
+     *                                      pass an explicit value for determinism.
      */
-    public function score(array $stored, array $incoming): float
+    public function score(array $stored, array $incoming, ?int $now = null): float
     {
         $w = $this->config->scoring;
         $score = 0.0;
+        $now ??= time();
 
         // --- IP (exact) ---
         $storedIp   = self::str($stored['ip_address'] ?? $stored['ip'] ?? null);
@@ -130,7 +140,46 @@ final class FingerprintMatcher
             $score += $w['language'];
         }
 
+        // --- Recency (graduated) ---
+        $score += $this->recencyScore($stored, $now);
+
         return (float) $score;
+    }
+
+    /**
+     * Full credit at the click, decaying linearly to 0 by the edge of the
+     * match window. Clock skew that makes the click look like it's in the
+     * future is clamped to full credit rather than penalized.
+     *
+     * @param array<string,mixed> $stored
+     */
+    private function recencyScore(array $stored, int $now): float
+    {
+        $weight = (float) ($this->config->scoring['recency'] ?? 0);
+        if ($weight <= 0.0) {
+            return 0.0;
+        }
+
+        $windowSeconds = $this->config->matchWindowSeconds();
+        if ($windowSeconds <= 0) {
+            return 0.0;
+        }
+
+        $createdAtRaw = $stored['created_at'] ?? null;
+        $createdAt = $createdAtRaw !== null ? strtotime((string) $createdAtRaw) : false;
+        if ($createdAt === false) {
+            return 0.0;
+        }
+
+        $elapsed = $now - $createdAt;
+        if ($elapsed <= 0) {
+            return $weight;
+        }
+        if ($elapsed >= $windowSeconds) {
+            return 0.0;
+        }
+
+        return $weight * (1 - $elapsed / $windowSeconds);
     }
 
     /** @return array{os: string, os_version: ?string, model_hint: ?string} */

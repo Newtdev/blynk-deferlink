@@ -9,6 +9,14 @@ export interface ScoringWeights {
   screen_dimensions: number;
   timezone: number;
   language: number;
+  /**
+   * Graduated credit for how close the match request is to the click's
+   * createdAt, full weight at the click and decaying linearly to 0 at the
+   * edge of the match window. Exists so a device that switched networks
+   * (no IP match) can still clear minConfidence on a fresh, otherwise-clean
+   * match instead of failing outright — see fingerprintMatcher.ts.
+   */
+  recency: number;
 }
 
 export interface RewardsConfig {
@@ -58,11 +66,14 @@ export class ReferralConfig {
     this.hashDeviceIds = c.hash_device_ids ?? true;
 
     this.scoring = {
-      ip_match: c.scoring?.ip_match ?? 40,
+      // Lowered from 40 now that recency picks up the slack — a network
+      // switch between click and install no longer fails the match outright.
+      ip_match: c.scoring?.ip_match ?? 25,
       device_model: c.scoring?.device_model ?? 25,
       screen_dimensions: c.scoring?.screen_dimensions ?? 15,
       timezone: c.scoring?.timezone ?? 10,
       language: c.scoring?.language ?? 10,
+      recency: c.scoring?.recency ?? 15,
     };
 
     this.rewards = {
