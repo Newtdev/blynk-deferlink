@@ -8,6 +8,13 @@ hands it to your signup flow and records the conversion.
 Pairs with `sparkle/referral-sdk` (PHP backend) and `@sparkle/referral-web`
 (landing page).
 
+> **Looking for app store IDs/links?** They don't belong here — this package
+> only ever runs after your app is already installed, so it never needs to
+> know where to send someone to download it. Set `androidPackage`/`iosAppId`
+> (or `androidStoreUrl`/`iosStoreUrl` to use a full URL as-is) in
+> `@sparkle/referral-web`'s config instead — that's the landing page redirecting
+> not-yet-installed visitors to the right store.
+
 ## Install
 
 This package isn't published to npm yet. Until it is, install it straight
@@ -65,7 +72,8 @@ Wrap your app once:
 import { ReferralProvider } from '@sparkle/referral-mobile';
 
 const referralConfig = {
-  apiEndpoint: 'https://referal.sparkle.ng/api',
+  // apiEndpoint defaults to the production backend — omit it entirely unless
+  // you're pointing at a staging/local server instead.
   appScheme: 'sparkleapp',
   matchTimeoutMs: 5000,
   onCodeFound: (code, method) => console.log('recovered', code, 'via', method),
@@ -147,7 +155,6 @@ const mmkvAdapter: ReferralStorageAdapter = {
 };
 
 const referralConfig = {
-  apiEndpoint: 'https://referal.sparkle.ng/api',
   storageAdapter: mmkvAdapter,
   // ...
 };
@@ -168,7 +175,7 @@ type the code from the landing page by hand.
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `apiEndpoint` | yes | Base URL of the PHP backend. |
+| `apiEndpoint` | no | Base URL of the referral backend. Defaults to the production endpoint (`https://referral-sdk-node.vercel.app/api`); override only for staging/local. |
 | `appScheme` | no | Custom scheme for deep-link handling. |
 | `matchTimeoutMs` | no | Max wait for the match request (default 5000). |
 | `matchWindow` / `minConfidence` | no | Informational; the server enforces both. |
