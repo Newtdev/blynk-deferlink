@@ -164,15 +164,42 @@ Mobile-side validation before trusting it:
   accept an arbitrary method string for logging purposes. Confirm during
   implementation.
 
-## Open questions to resolve before building
+## Decisions
 
-1. **Prompt vs. `UIPasteControl`?** The plain read is simpler to build but
-   shows the system "would like to paste" dialog on every fresh install.
-   `UIPasteControl` avoids that but needs a visible button and a small
-   native-module spike to confirm RN support. Worth a short spike before
-   deciding.
-2. **Max payload age** — reuse the existing match-window config, or a
-   shorter, clipboard-specific window (the clipboard scenario is a much
-   tighter, same-session timeframe than the 48h fingerprint window)?
-3. Does a denied paste-prompt need its own analytics event, separate from
-   "no code found," so it's distinguishable in metrics from a genuine miss?
+1. **`UIPasteControl`, exposed as an SDK-provided function/component —
+   placement is the consuming app's choice, but required.** We don't
+   dictate a screen. The SDK ships either a hook (e.g.
+   `useClipboardReferralPaste()`) or a ready component (matching how
+   `referral-web`'s `StoreButton` already works) wrapping the native paste
+   control; the consuming app decides where it lives — inline on a signup
+   screen, a dedicated first-launch moment, wherever fits their product.
+   The one non-negotiable: the README must be explicit that **this isn't
+   decorative** — if the app never renders/calls it, iOS silently gets no
+   deterministic path at all and always falls straight to fingerprint
+   matching. That has to be stated plainly, not buried, since skipping it
+   doesn't error — it just quietly degrades.
+   *(Still open: confirming `UIPasteControl`'s React Native support —
+   needs the short spike noted below before this is buildable.)*
+
+2. **Max payload age: reuse the existing match-window config.** Same
+   window fingerprint matching already uses (`matchWindowHours`, default
+   48h) — one "how long is a click valid" story across both recovery
+   paths, not two separate configs to keep in sync.
+
+3. **No dedicated analytics event for a denied paste prompt.** Sparkle
+   already has separate infrastructure for event tracking, so the SDK
+   doesn't need to own storage for this — it just needs to expose enough
+   through existing callbacks (`onCodeFound` / `onNoCode`, plus the
+   `'clipboard'` addition to `MatchMethod`) for that infrastructure to log
+   it itself.
+
+## Remaining open question
+
+- **Prompt vs. `UIPasteControl`, technically.** The plain read is simplest
+  to build but shows the system "would like to paste" dialog on every
+  fresh install. `UIPasteControl` avoids that dialog but needs a visible
+  button (decision 1 above covers *where* — this is about *whether it's
+  buildable at all* in React Native, since it's a fairly new, low-level
+  UIKit widget existing RN clipboard packages don't obviously wrap). Needs
+  a short spike to confirm before committing to it over the plain-prompt
+  fallback.
