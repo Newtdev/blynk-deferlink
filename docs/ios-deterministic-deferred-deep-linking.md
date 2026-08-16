@@ -128,11 +128,29 @@ it's on-device, first-party, momentary. It doesn't require the ATT prompt.
 
 ## Fallback chain (both platforms, after this change)
 
+Android's chain is a single automatic sequence — both tiers run without
+any user interaction, one falling through to the next:
+
 ```
-Android: Install Referrer (deterministic) → fingerprint match (fallback)
-iOS:     Clipboard payload (deterministic) → fingerprint match (fallback)
-Both:    → manual code entry (existing UI fallback, unchanged)
+Android: Install Referrer (deterministic, automatic) → fingerprint match (fallback, automatic)
 ```
+
+iOS isn't quite the same shape, and this is worth being precise about —
+it's not one automatic sequence with a silent clipboard step slotted in
+first. `UIPasteControl` (the mechanism the deterministic tier is built
+on) only grants clipboard access from an explicit user tap — there's no
+way to invoke it silently on launch the way `recoverIos()` invokes
+fingerprint matching. So iOS actually runs two independent things that
+happen to compose:
+
+```
+iOS, automatic on launch:        fingerprint match (unchanged, always runs)
+iOS, if/when the user taps
+  <ReferralPasteButton>:         clipboard payload (deterministic) → overrides the above if valid
+```
+
+Both platforms still fall through to manual code entry (existing UI
+fallback, unchanged) if nothing else produced a code.
 
 ## Proposed payload format
 
@@ -152,26 +170,64 @@ Mobile-side validation before trusting it:
    both backends) if the app wants to confirm it server-side before
    trusting it fully.
 
-## Implementation sketch
+## Implementation — Done
 
-- **`packages/referral-web`**: on the download CTA's click handler,
-  before navigating to the store, `navigator.clipboard.writeText(payload)`.
-  Needs a secure context (already HTTPS) and a user gesture (the click
-  itself satisfies this).
-- **`packages/referral-mobile`**: a new `readClipboardReferral()`
-  alongside `readInstallReferrer()` in `src/platform/`, wired into
-  `recoverIos()` as the first attempt, falling through to the existing
-  `matchViaFingerprint()` on any failure (missing, denied, malformed, or
-  stale payload) — mirrors how `recoverAndroid()` already falls through
-  from install referrer to fingerprint matching today. On a successful
-  read, clear the clipboard immediately after validating the payload —
-  prevents the token from lingering and getting pasted somewhere
-  unrelated by accident later.
-- **Types**: extend `MatchMethod` (`'install_referrer' | 'fingerprint'`)
-  with `'clipboard'` so `onCodeFound` / analytics can distinguish it.
-- **Backend**: likely no schema changes required — claim/match already
-  accept an arbitrary method string for logging purposes. Confirm during
-  implementation.
+- **`packages/referral-web`**: `writeClipboardReferral(code)`
+  (`src/utils/clipboardHandoff.ts`), called from `redirectToStore` in
+  `ReferralLanding.tsx` — awaited before `window.location.href` navigates
+  away, iOS only (Android already has a deterministic path, no clipboard
+  needed there). Best-effort: failures (in-app browser restrictions,
+  non-secure context) are swallowed, not surfaced — fingerprint matching
+  covers the gap either way.
+- **`packages/referral-mobile`**: turned out *not* to be a
+  `readClipboardReferral()` wired into `recoverIos()` as first thought —
+  see "Fallback chain" above for why. Instead:
+  - `parseClipboardReferralPayload()` (`src/platform/clipboardPayload.ts`,
+    unit tested) — the shared, pure validation logic.
+  - `ReferralPasteButton` (`src/ReferralPasteButton.tsx`) — the exposed
+    component, wraps a native `UIPasteControl` view. Renders nothing on
+    Android or iOS <16.
+  - A small native module (`ios/ReferralPasteControlView.swift`,
+    `ReferralPasteControlManager.swift`+`.m`, plus
+    `ReferralMobilePasteControl.podspec` at the package root) — the
+    `UIPasteControl` wrapper itself. Verified with a real `swiftc
+    -typecheck` against Apple's iOS 16 SDK headers (stubbing only RN's own
+    types, which aren't available outside a full app build) — zero errors.
+    Bridge registration against the real React-Core pod is still
+    unverified without an actual app build; worth a real device/simulator
+    smoke test before shipping.
+  - `ReferralService.applyClipboardCode(code)` — applies a
+    deterministically-recovered code, overriding whatever the automatic
+    fingerprint path already found. Also marks recovery as attempted, so
+    fingerprint matching doesn't keep running pointlessly once a
+    deterministic result is in hand.
+  - `useReferralCode()` exposes `onClipboardCode`, wired to
+    `<ReferralPasteButton onCode={onClipboardCode} />` by the app.
+  - Clipboard *is* cleared (`UIPasteboard.general.items = []`) right after
+    a successful read, as planned — done narrowly, only when the pasted
+    text actually starts with the `sparkle_ref:v1:` prefix. That guard
+    matters: `UIPasteControl` enables itself whenever *any* string is on
+    the pasteboard, not specifically our payload format, so clearing
+    unconditionally would risk wiping a user's unrelated clipboard content
+    just because they tapped the button.
+- **Types**: `MatchMethod` extended to `'install_referrer' | 'fingerprint'
+  | 'clipboard'`.
+- **Backend, both Node and PHP — schema changes *were* required**,
+  contrary to the original guess above: `claim`'s method validation
+  (`z.enum` in Node, Laravel validation rule in PHP) only accepted
+  `install_referrer`/`fingerprint` — a clipboard-recovered claim would
+  have been rejected with a 422 without this. Also updated the PHP
+  migration and standalone SQL schema's `match_method` enum column (safe
+  to edit in place rather than a new migration, since neither backend is
+  deployed with real data yet). `/match`'s own method field didn't need
+  the addition — clipboard recovery never calls `/match` at all, it's
+  validated entirely client-side.
+- **Not implemented from the original plan**: the optional server-side
+  `code_validator` pre-check before trusting a clipboard code (point 3
+  under "payload format" above). Left out because `claim()` already
+  validates the code server-side before recording a conversion or
+  granting a reward — an extra pre-check would be redundant protection,
+  not a gap.
 
 ## Decisions
 

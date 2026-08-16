@@ -28,6 +28,7 @@ export {
   isInAppBrowser,
 } from './utils/platformDetect';
 export { getStoreUrl, getAppSchemeUrl } from './utils/storeUrls';
+export { writeClipboardReferral } from './utils/clipboardHandoff';
 export { buildReferralMeta } from './utils/og';
 export type { ReferralMetaInput, OpenGraphMeta } from './utils/og';
 

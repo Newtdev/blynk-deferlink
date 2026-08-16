@@ -67,7 +67,7 @@ export const referralConversions = pgTable(
     referralCode: varchar('referral_code', { length: 50 }).notNull(),
     deviceId: varchar('device_id', { length: 255 }).notNull(),
     platform: varchar('platform', { length: 10 }).notNull(), // 'ios' | 'android'
-    matchMethod: varchar('match_method', { length: 20 }).notNull(), // 'install_referrer' | 'fingerprint'
+    matchMethod: varchar('match_method', { length: 20 }).notNull(), // 'install_referrer' | 'fingerprint' | 'clipboard'
     matchConfidence: doublePrecision('match_confidence'),
     userId: varchar('user_id', { length: 255 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

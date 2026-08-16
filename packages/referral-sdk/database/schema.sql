@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS referral_conversions (
     referral_code VARCHAR(50) NOT NULL,
     device_id VARCHAR(255) NOT NULL UNIQUE,     -- One referral per device
     platform ENUM('ios', 'android') NOT NULL,
-    match_method ENUM('install_referrer', 'fingerprint') NOT NULL,
+    match_method ENUM('install_referrer', 'fingerprint', 'clipboard') NOT NULL,
     match_confidence DECIMAL(5,2),              -- 0.00 to 100.00
     user_id VARCHAR(255) NULL,                  -- Set after user signs up
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

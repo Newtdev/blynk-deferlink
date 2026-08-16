@@ -27,7 +27,7 @@ class ClaimController
             'referral_code' => ['required', 'string', 'max:50'],
             'device_id'     => ['required', 'string', 'max:255'],
             'platform'      => ['required', 'in:ios,android'],
-            'method'        => ['required', 'in:install_referrer,fingerprint'],
+            'method'        => ['required', 'in:install_referrer,fingerprint,clipboard'],
             'user_id'       => ['nullable', 'string', 'max:255'],
             'click_id'      => ['nullable', 'string', 'max:36'],
             'confidence'    => ['nullable', 'numeric'],

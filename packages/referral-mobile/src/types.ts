@@ -1,4 +1,4 @@
-export type MatchMethod = 'install_referrer' | 'fingerprint';
+export type MatchMethod = 'install_referrer' | 'fingerprint' | 'clipboard';
 export type MobilePlatform = 'ios' | 'android';
 
 /**
@@ -25,7 +25,15 @@ export interface ReferralConfig {
   apiEndpoint?: string;
   /** Custom URL scheme without "://", used for deep-link handling. */
   appScheme?: string;
-  /** Match window in ms (informational; the server enforces its own). */
+  /**
+   * Match window in ms. Mostly informational — the server enforces its
+   * own window regardless — but it is one real thing: it's reused as the
+   * staleness cutoff for clipboard-based iOS recovery (ReferralPasteButton),
+   * since the mobile SDK has no other way to know what window the backend
+   * was actually configured with. Set this to match your backend's
+   * min_confidence/match_window_hours config if you've customized it away
+   * from the 48h default.
+   */
   matchWindow?: number;
   /** Minimum confidence the app will accept (informational; server enforces). */
   minConfidence?: number;
@@ -83,4 +91,10 @@ export interface ReferralResult {
    * the code across restarts, only whether recovery was attempted.
    */
   claim: (userId: string, code?: string) => Promise<ClaimResult>;
+  /**
+   * Wire this to `<ReferralPasteButton onCode={onClipboardCode} />` on iOS
+   * — applies a deterministically-recovered code, overriding whatever the
+   * automatic fingerprint path already found.
+   */
+  onClipboardCode: (code: string) => void;
 }
