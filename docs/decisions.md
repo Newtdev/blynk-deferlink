@@ -381,3 +381,39 @@ was the one part of the same claim that did hold up.
 restricted API to begin with — there's no real requirement to satisfy
 here, and adding a mismatched declaration risks causing confusion in
 review rather than preventing it.
+
+---
+
+## 13. `exports` map silently shadowed the `react-native` field — Done
+
+**Problem, surfaced by the Sparkle-side integration needing a manual
+patch.** `package.json` had both a top-level `"react-native": "./src/index.ts"`
+field (the thing the README's "no build step required" claim depended
+on) and an `"exports"` map. Per Metro's own package-exports support
+(present since RN 0.72): **when `exports` exists, it takes precedence
+over every top-level field, entirely** — Metro only matches conditions
+that exist inside the `exports` object itself. This package's `exports`
+map only had `types` / `import` / `require`, all pointing at `./dist/...`
+— no `react-native` key at all. So the top-level field was never actually
+consulted; Metro fell through to `require: "./dist/index.cjs"`, which
+doesn't exist, since `dist/` is intentionally not built or committed for
+this pre-npm-publish, ship-from-source distribution method. A second,
+related failure rode along with it: `exports.types` pointed at the same
+missing `./dist/index.d.ts`, so TypeScript lost all type information for
+the package too — not just a bundling failure, a silent loss of types.
+
+**Fix.** Added a `react-native` condition and pointed `types` at
+`./src/index.ts` directly inside the `exports` map, matching what the
+top-level fields were already trying to express. The top-level
+`main`/`module`/`types` fields are left pointing at `dist/` as-is — they
+describe the *eventual* real npm-published state correctly, and are
+inert right now since `exports`, when present, is what every modern
+resolver actually consults; nothing was resolving through them anyway.
+
+**Follow-up needed at actual npm-publish time, not now:** once a real
+`dist/` gets built and published, `exports.types` should point back to
+`./dist/index.d.ts` and the `react-native` condition can point to
+`./dist/index.js` (or be dropped, since a published package won't be
+running from source) — this fix is specifically for the current
+ship-from-source phase via the `mobile-release` branch and shouldn't be
+carried forward unexamined once that changes.
