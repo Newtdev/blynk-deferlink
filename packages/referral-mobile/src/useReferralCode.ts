@@ -4,8 +4,11 @@ import type { ClaimResult, MatchMethod, ReferralResult } from './types';
 
 /**
  * Recovers the referral code on first launch and exposes it to the signup flow.
- * Recovery runs exactly once per install (guarded in storage), so mounting this
- * hook on multiple screens is safe.
+ * Recovery runs exactly once per install; mounting this hook on multiple
+ * screens is safe (cached in memory for the session, not re-run). The code
+ * itself isn't persisted by the SDK past this session — see ReferralConfig's
+ * storageAdapter doc and ReferralResult.claim if the app needs to claim it
+ * later instead of immediately.
  */
 export function useReferralCode(): ReferralResult {
   const { service } = useReferralContext();
@@ -42,7 +45,8 @@ export function useReferralCode(): ReferralResult {
   }, [service]);
 
   const claim = useCallback(
-    (userId: string): Promise<ClaimResult> => service.claim(userId),
+    (userId: string, overrideCode?: string): Promise<ClaimResult> =>
+      service.claim(userId, overrideCode),
     [service],
   );
 

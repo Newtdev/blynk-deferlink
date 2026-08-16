@@ -32,10 +32,11 @@ export interface ReferralConfig {
   /** Max ms to wait for the match request before giving up. */
   matchTimeoutMs?: number;
   /**
-   * Where the recovered code and "already processed" flag are persisted.
-   * Defaults to a lazily-loaded `@react-native-async-storage/async-storage`
-   * adapter if omitted — pass your own to use MMKV, SQLite, etc. instead and
-   * skip installing AsyncStorage entirely. See ReferralStorageAdapter.
+   * Where the "already processed" flag is persisted — not the recovered
+   * code itself; see ReferralResult.claim for why. Defaults to a
+   * lazily-loaded `@react-native-async-storage/async-storage` adapter if
+   * omitted — pass your own to use MMKV, SQLite, etc. instead and skip
+   * installing AsyncStorage entirely. See ReferralStorageAdapter.
    */
   storageAdapter?: ReferralStorageAdapter;
   /** Called as soon as a code is recovered by any method. */
@@ -74,5 +75,12 @@ export interface ReferralResult {
   confidence: number | null;
   loading: boolean;
   error: Error | null;
-  claim: (userId: string) => Promise<ClaimResult>;
+  /**
+   * Records the conversion after signup. Call with just `userId` for the
+   * common case (claiming the `code` this same hook call just recovered).
+   * Pass `code` explicitly only if the app is claiming a code it recovered
+   * and stored itself in an *earlier* session — the SDK doesn't persist
+   * the code across restarts, only whether recovery was attempted.
+   */
+  claim: (userId: string, code?: string) => Promise<ClaimResult>;
 }

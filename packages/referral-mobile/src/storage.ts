@@ -1,29 +1,28 @@
-import type { MatchMethod, ReferralStorageAdapter } from './types';
+import type { ReferralStorageAdapter } from './types';
 
 const PROCESSED_KEY = 'sparkle.referral.processed';
-const CODE_KEY = 'sparkle.referral.code';
-
-export interface StoredReferral {
-  code: string;
-  method: MatchMethod;
-  confidence: number | null;
-  claimed: boolean;
-}
 
 export interface ReferralStorage {
   isProcessed(): Promise<boolean>;
   markProcessed(): Promise<void>;
-  saveCode(data: StoredReferral): Promise<void>;
-  getCode(): Promise<StoredReferral | null>;
-  markClaimed(): Promise<void>;
   reset(): Promise<void>;
 }
 
 /**
- * Builds the referral-specific storage operations on top of a plain
- * key/value adapter. Framework-agnostic — works identically whether the
- * adapter wraps AsyncStorage, MMKV, or anything else conforming to
- * ReferralStorageAdapter.
+ * The SDK persists exactly one thing: whether recovery has already been
+ * attempted for this install. It deliberately does NOT persist the
+ * recovered code itself — most apps already have their own storage
+ * (Redux, MMKV) and shouldn't need a second copy living in this SDK too.
+ * `useReferralCode()` hands the code to the caller directly on the launch
+ * that recovers it; from there, remembering it across sessions (if the
+ * app needs to) is the app's job, not this SDK's.
+ *
+ * This flag exists for a concrete reason, not just tidiness: the /match
+ * endpoint is rate-limited per device (default 5/day). Without it,
+ * recovery would re-run — and re-hit that endpoint — on every single app
+ * launch, and a normally-active user reopening the app more than a
+ * handful of times a day would exhaust the budget on routine opens alone,
+ * before a real match ever got the chance to run.
  */
 export function createStorage(adapter: ReferralStorageAdapter): ReferralStorage {
   return {
@@ -35,30 +34,8 @@ export function createStorage(adapter: ReferralStorageAdapter): ReferralStorage 
       await adapter.setItem(PROCESSED_KEY, '1');
     },
 
-    async saveCode(data: StoredReferral): Promise<void> {
-      await adapter.setItem(CODE_KEY, JSON.stringify(data));
-    },
-
-    async getCode(): Promise<StoredReferral | null> {
-      const raw = await adapter.getItem(CODE_KEY);
-      if (!raw) return null;
-      try {
-        return JSON.parse(raw) as StoredReferral;
-      } catch {
-        return null;
-      }
-    },
-
-    async markClaimed(): Promise<void> {
-      const existing = await this.getCode();
-      if (existing) {
-        await this.saveCode({ ...existing, claimed: true });
-      }
-    },
-
     async reset(): Promise<void> {
       await adapter.removeItem(PROCESSED_KEY);
-      await adapter.removeItem(CODE_KEY);
     },
   };
 }
