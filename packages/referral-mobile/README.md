@@ -187,12 +187,22 @@ control:
 ```tsx
 <ReferralPasteButton
   onCode={onClipboardCode}
-  style={{ height: 44 }}
+  style={{ height: 48 }}          // match your own buttons' rendered height
   pasteForegroundColor="#FFFFFF"
   pasteBackgroundColor="#6C63FF"  // your brand color
-  cornerStyle="capsule"
+  cornerStyle="medium"            // pick by comparing against your own buttons — see below
 />
 ```
+
+`cornerStyle` has no arbitrary-radius option, only named styles
+(`dynamic` | `fixed` | `capsule` | `large` | `medium` | `small`), and
+none of them documents what it actually looks like — `fixed` sounds like
+the obvious match for a fixed-radius design system but renders
+noticeably subtler than a typical `borderRadius: 12`; `medium` was the
+real match here, found by rendering the app on-device and comparing
+screenshots against the surrounding buttons, not by reading the name.
+Expect to do the same comparison against your own button style rather
+than trust the name.
 
 If even the system icon/label reads as too "systemy" next to the rest of
 your design system, drop to `displayMode="iconOnly"` and put your own

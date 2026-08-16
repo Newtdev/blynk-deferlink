@@ -134,7 +134,7 @@ function Screen() {
         style={styles.pasteBtn}
         pasteForegroundColor="#FFFFFF"
         pasteBackgroundColor="#6C63FF"
-        cornerStyle="fixed"
+        cornerStyle="medium"
       />
 
       <Text style={styles.step}>Walk the flow:</Text>
@@ -202,9 +202,11 @@ const styles = StyleSheet.create({
   // text color and same rendered height (btn's height comes from its own
   // padding: 15 + ~18pt line height at fontSize 15, so 48 here reproduces
   // it since the native control has no padding of its own to compute
-  // from). cornerStyle: 'fixed' on the button itself is the closest match
-  // to btn's borderRadius: 12 — UIPasteControl has no arbitrary radius,
-  // only named styles (capsule/fixed/large/medium/small/dynamic).
+  // from). cornerStyle: 'medium' was picked by comparing rendered
+  // screenshots against btn's borderRadius: 12 — UIPasteControl has no
+  // arbitrary radius, only named styles, and 'fixed' (tried first, by
+  // name alone) turned out visibly too subtle; 'medium' is the actual
+  // match.
   pasteBtn: { height: 48, marginTop: 4 },
   btn: { backgroundColor: '#6C63FF', borderRadius: 12, padding: 15, alignItems: 'center' },
   btnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#3a3a45' },
