@@ -50,5 +50,15 @@ export function useReferralCode(): ReferralResult {
     [service],
   );
 
-  return { code, method, confidence, loading, error, claim };
+  const onClipboardCode = useCallback(
+    (clipboardCode: string) => {
+      const result = service.applyClipboardCode(clipboardCode);
+      setCode(result.code);
+      setMethod(result.method);
+      setConfidence(result.confidence);
+    },
+    [service],
+  );
+
+  return { code, method, confidence, loading, error, claim, onClipboardCode };
 }

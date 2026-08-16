@@ -121,6 +121,25 @@ export class ReferralService {
     });
   }
 
+  /**
+   * Applies a code recovered deterministically via the clipboard tier
+   * (ReferralPasteButton), overriding whatever the automatic fingerprint
+   * path already found — clipboard recovery is exact-match, strictly more
+   * trustworthy than a probabilistic score. Unlike `recover()`, this is
+   * user-triggered (a tap on the paste control), not automatic, so it can
+   * fire at any point after mount, not just once on launch.
+   */
+  applyClipboardCode(code: string): RecoveryOutcome {
+    const result: RecoveryOutcome = { code, method: 'clipboard', confidence: null };
+    this.lastRecovery = result;
+    this.config.onCodeFound?.(code, 'clipboard');
+    // Best-effort — if fingerprint recovery already ran and set this, fine;
+    // if it's still in flight, this pre-empts it from re-running pointlessly
+    // once the deterministic result is already in hand.
+    void this.storage.markProcessed();
+    return result;
+  }
+
   /** Test/debug helper — clears recovery state so the flow can run again. */
   async reset(): Promise<void> {
     this.lastRecovery = null;

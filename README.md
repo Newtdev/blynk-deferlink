@@ -123,6 +123,51 @@ function SignupScreen() {
 }
 ```
 
+## iOS deterministic recovery — `ReferralPasteButton`
+
+Android has a deterministic path (Install Referrer, below). iOS has no OS
+equivalent, so fingerprint matching is the only *automatic* recovery it
+gets — reliable, but probabilistic. `ReferralPasteButton` adds a genuine
+deterministic tier for iOS, using the system clipboard as a same-device
+handoff from the web landing page (`@sparkle/referral-web`'s
+`writeClipboardReferral`) to the app's first launch.
+
+**This is required, not decorative, if you want iOS to have a
+deterministic path at all — and skipping it fails silently, not loudly.**
+Unlike fingerprint matching, it can't run automatically: Apple's paste
+APIs only grant clipboard access from an explicit user tap, so there's no
+way around rendering something tappable. If this component is never
+rendered, or the user never taps it, iOS just always falls through to
+fingerprint matching — no error, no signal, just quietly weaker matching
+on every install. Where you place it is entirely up to you (inline on the
+signup screen, a dedicated first-launch moment) — just make sure it's
+somewhere:
+
+```tsx
+import { useReferralCode, ReferralPasteButton } from '@sparkle/referral-mobile';
+
+function SignupScreen() {
+  const { code, method, claim, onClipboardCode } = useReferralCode();
+
+  return (
+    <View>
+      {/* Renders nothing on Android or iOS <16 — safe to always include. */}
+      <ReferralPasteButton onCode={onClipboardCode} style={{ height: 44 }} />
+
+      <TextInput value={code ?? ''} editable={!code} placeholder="Referral code (optional)" />
+    </View>
+  );
+}
+```
+
+A tap that finds a valid, non-stale payload overrides whatever the
+automatic fingerprint path already found (`method` becomes `'clipboard'`)
+— deterministic exact-match is strictly more trustworthy than a score.
+
+This ships native iOS code (a small `UIPasteControl` wrapper), which is
+why `pod install` is part of the install steps above — nothing extra to
+configure beyond that.
+
 ## How recovery works
 
 ```
@@ -135,7 +180,8 @@ First launch → useReferralCode()
 │   └─ Empty referrer → fingerprint match    → method: fingerprint
 │
 └─ iOS:
-    └─ Fingerprint match (POST /referral/match) → method: fingerprint
+    ├─ Automatic: fingerprint match (POST /referral/match) → method: fingerprint
+    └─ User taps <ReferralPasteButton>, if rendered → method: clipboard (overrides the above)
 ```
 
 Recovery runs **once per install** — mounting the hook on several screens
