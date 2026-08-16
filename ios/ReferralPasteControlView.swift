@@ -18,7 +18,19 @@ import UIKit
 class ReferralPasteControlView: UIView {
   @objc var onPaste: RCTDirectEventBlock?
 
-  private let pasteControl: UIPasteControl
+  // Theming, all optional and all backed by real `UIPasteControl.Configuration`
+  // fields (verified against the iOS 16 SDK — its actual surface is much
+  // narrower than UIButton.Configuration: no custom image, font, or label
+  // text, since the button's icon+text is a fixed system promise that's
+  // part of why it can skip the "would like to paste" prompt at all).
+  // Named `paste*`, not `tintColor`/`backgroundColor`, to avoid shadowing
+  // UIView's own built-in properties of those names.
+  @objc var pasteForegroundColor: UIColor? { didSet { rebuildControl() } }
+  @objc var pasteBackgroundColor: UIColor? { didSet { rebuildControl() } }
+  @objc var cornerStyle: NSString? { didSet { rebuildControl() } }
+  @objc var displayMode: NSString? { didSet { rebuildControl() } }
+
+  private var pasteControl: UIPasteControl
   // Only used for the narrow "is it safe to clear the clipboard" check
   // below — full format/staleness validation stays in JS either way.
   private let payloadPrefix = "sparkle_ref:v1:"
@@ -43,6 +55,46 @@ class ReferralPasteControlView: UIView {
   override func layoutSubviews() {
     super.layoutSubviews()
     pasteControl.frame = bounds
+  }
+
+  // UIPasteControl's `configuration` is get-only after init — there's no
+  // setter to restyle one in place (confirmed by trying it against the
+  // real SDK, not documented). Restyling means building a new instance
+  // with the updated Configuration and swapping it in; `paste(itemProviders:)`
+  // below is unaffected since it fires via the responder chain on `self`
+  // (the `target`), not per-control-instance state.
+  private func rebuildControl() {
+    let config = UIPasteControl.Configuration()
+    config.baseForegroundColor = pasteForegroundColor
+    config.baseBackgroundColor = pasteBackgroundColor
+    config.cornerStyle = Self.parseCornerStyle(cornerStyle as String?)
+    config.displayMode = Self.parseDisplayMode(displayMode as String?)
+
+    let newControl = UIPasteControl(configuration: config)
+    newControl.target = self
+    newControl.frame = bounds
+    pasteControl.removeFromSuperview()
+    pasteControl = newControl
+    addSubview(pasteControl)
+  }
+
+  private static func parseCornerStyle(_ raw: String?) -> UIButton.Configuration.CornerStyle {
+    switch raw {
+    case "fixed": return .fixed
+    case "capsule": return .capsule
+    case "large": return .large
+    case "medium": return .medium
+    case "small": return .small
+    default: return .dynamic
+    }
+  }
+
+  private static func parseDisplayMode(_ raw: String?) -> UIPasteControl.DisplayMode {
+    switch raw {
+    case "iconOnly": return .iconOnly
+    case "labelOnly": return .labelOnly
+    default: return .iconAndLabel
+    }
   }
 
   override func paste(itemProviders: [NSItemProvider]) {
