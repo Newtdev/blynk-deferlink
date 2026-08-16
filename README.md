@@ -128,7 +128,7 @@ function SignupScreen() {
 ```
 First launch → useReferralCode()
 │
-├─ Already processed? → return the stored result (no network)
+├─ Already attempted this install (in an earlier session)? → nothing new to report
 │
 ├─ Android:
 │   ├─ Read Install Referrer → parse code   → method: install_referrer
@@ -138,19 +138,29 @@ First launch → useReferralCode()
     └─ Fingerprint match (POST /referral/match) → method: fingerprint
 ```
 
-Recovery runs **once per install** — the result is cached via your storage
-adapter (AsyncStorage by default), so mounting the hook on several screens is
-safe. A conversion is recorded once per device; a second `claim()` returns
-`already_claimed`.
+Recovery runs **once per install** — mounting the hook on several screens
+within the same session is safe and free (cached in memory, no repeat network
+calls). A conversion is recorded once per device; a second `claim()` returns
+`already_claimed` — that check is entirely server-side, nothing to manage
+on the client.
 
 ## Storage
 
-By default, the recovered code and the "already ran" flag are persisted with
-a lazily-loaded `@react-native-async-storage/async-storage`. If your app
-already has its own storage engine, there's no need to also install and ship
-AsyncStorage — pass a `storageAdapter` instead. The contract is the smallest
-possible key/value shape (the same one `redux-persist` uses for this exact
-reason), so wrapping anything else is a few lines:
+The SDK persists exactly one thing: whether recovery has already been
+attempted for this install — not the recovered code itself. That's
+deliberate, not an oversight: most apps already have their own storage
+(Redux, MMKV) and shouldn't need a second copy of the code living in this
+SDK too. `useReferralCode()` hands you `code` directly on the launch that
+recovers it (or via the `onCodeFound` callback); if you need it again in a
+*later* session, store it yourself the same way you'd store anything else,
+and pass it to `claim()` explicitly then — see the reference below.
+
+By default the "already attempted" flag is persisted with a lazily-loaded
+`@react-native-async-storage/async-storage`. If your app already has its own
+storage engine, there's no need to also install and ship AsyncStorage — pass
+a `storageAdapter` instead. The contract is the smallest possible key/value
+shape (the same one `redux-persist` uses for this exact reason), so wrapping
+anything else is a few lines:
 
 ```tsx
 import { MMKV } from 'react-native-mmkv';
@@ -175,6 +185,28 @@ needs to be installed at all — one storage engine in your app, not two, and
 one less native dependency's version to keep compatible with the rest of
 your project.
 
+### Claiming a code in a later session
+
+The common case needs none of this — call `claim(userId)` right after
+`useReferralCode()` recovers a code, in the same session, and it's picked up
+automatically. If your signup flow can span sessions (the user closes the
+app before finishing), store the code yourself when it's first found and
+pass it to `claim()` explicitly later:
+
+```tsx
+const { code, claim } = useReferralCode();
+
+// When first recovered — persist it your own way if signup might not
+// finish in this session:
+useEffect(() => {
+  if (code) myOwnStorage.set('referralCode', code);
+}, [code]);
+
+// Later, possibly in a different session:
+const savedCode = myOwnStorage.get('referralCode');
+if (savedCode) await claim(userId, savedCode);
+```
+
 ## Manual fallback
 
 If a match fails (common when an iOS user switches networks between click and
@@ -189,7 +221,7 @@ type the code from the landing page by hand.
 | `appScheme` | no | Custom scheme for deep-link handling. |
 | `matchTimeoutMs` | no | Max wait for the match request (default 5000). |
 | `matchWindow` / `minConfidence` | no | Informational; the server enforces both. |
-| `storageAdapter` | no | Custom persistence (MMKV, SQLite, etc). Defaults to AsyncStorage. See "Storage" above. |
+| `storageAdapter` | no | Custom persistence for the "already attempted" flag only (MMKV, SQLite, etc) — not the code itself. Defaults to AsyncStorage. See "Storage" above. |
 | `onCodeFound` / `onNoCode` | no | Recovery callbacks. |
 
 ## Build
