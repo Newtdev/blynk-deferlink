@@ -178,21 +178,46 @@ system-owned icon+text is part of why it's allowed to skip the "would
 like to paste" prompt at all — a fully reskinnable control couldn't make
 that same unspoken promise to the user.
 
+**Recommended: theme colors, keep the icon+label.** This is what
+`examples/mobile` uses, and the pattern to reach for by default — it
+keeps the frictionless no-prompt UX (the entire point of this tier)
+while still reading as part of your app instead of a bare system
+control:
+
 ```tsx
 <ReferralPasteButton
   onCode={onClipboardCode}
   style={{ height: 44 }}
   pasteForegroundColor="#FFFFFF"
-  pasteBackgroundColor="#6C4EFF"
-  cornerStyle="capsule"     // 'dynamic' (default) | 'fixed' | 'capsule' | 'large' | 'medium' | 'small'
-  displayMode="iconOnly"    // 'iconAndLabel' (default) | 'iconOnly' | 'labelOnly'
+  pasteBackgroundColor="#6C63FF"  // your brand color
+  cornerStyle="capsule"
 />
 ```
 
-All four are optional — omit any of them to get the system default for
-that aspect. Every prop maps 1:1 to a real `UIPasteControl.Configuration`
-field (`baseForegroundColor`, `baseBackgroundColor`, `cornerStyle`,
-`displayMode`); nothing here is invented.
+If even the system icon/label reads as too "systemy" next to the rest of
+your design system, drop to `displayMode="iconOnly"` and put your own
+on-brand copy beside it in JS instead — the control shrinks to just the
+consent-granting tap target, and the text becomes yours to fully own:
+
+```tsx
+<View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+  <Text style={yourBrandTextStyle}>Have a code? Tap to paste →</Text>
+  <ReferralPasteButton
+    onCode={onClipboardCode}
+    style={{ width: 32, height: 32 }}
+    pasteForegroundColor="#6C63FF"
+    displayMode="iconOnly"
+  />
+</View>
+```
+
+All four props (`pasteForegroundColor`, `pasteBackgroundColor`,
+`cornerStyle`, `displayMode`) are optional — omit any of them to get the
+system default for that aspect. Every one maps 1:1 to a real
+`UIPasteControl.Configuration` field (`baseForegroundColor`,
+`baseBackgroundColor`, `cornerStyle`, `displayMode`; full value lists in
+[`ReferralPasteButton.tsx`](src/ReferralPasteButton.tsx)); nothing here
+is invented.
 
 ## How recovery works
 
