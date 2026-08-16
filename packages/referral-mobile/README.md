@@ -168,6 +168,32 @@ This ships native iOS code (a small `UIPasteControl` wrapper), which is
 why `pod install` is part of the install steps above — nothing extra to
 configure beyond that.
 
+### Theming
+
+`UIPasteControl` is a system control, not a plain button — it's genuinely
+customizable, just not *arbitrarily* so. You can theme colors, corner
+shape, and icon/label layout; you can't change the icon, the font, or the
+label text itself. That's deliberate on Apple's part: the button's fixed,
+system-owned icon+text is part of why it's allowed to skip the "would
+like to paste" prompt at all — a fully reskinnable control couldn't make
+that same unspoken promise to the user.
+
+```tsx
+<ReferralPasteButton
+  onCode={onClipboardCode}
+  style={{ height: 44 }}
+  pasteForegroundColor="#FFFFFF"
+  pasteBackgroundColor="#6C4EFF"
+  cornerStyle="capsule"     // 'dynamic' (default) | 'fixed' | 'capsule' | 'large' | 'medium' | 'small'
+  displayMode="iconOnly"    // 'iconAndLabel' (default) | 'iconOnly' | 'labelOnly'
+/>
+```
+
+All four are optional — omit any of them to get the system default for
+that aspect. Every prop maps 1:1 to a real `UIPasteControl.Configuration`
+field (`baseForegroundColor`, `baseBackgroundColor`, `cornerStyle`,
+`displayMode`); nothing here is invented.
+
 ## How recovery works
 
 ```

@@ -1,11 +1,20 @@
 import { Platform, requireNativeComponent } from 'react-native';
-import type { StyleProp, ViewStyle } from 'react-native';
+import type { ColorValue, StyleProp, ViewStyle } from 'react-native';
 import { useReferralContext } from './ReferralProvider';
 import { parseClipboardReferralPayload } from './platform/clipboardPayload';
+
+/** Maps to `UIPasteControl.Configuration.cornerStyle` (`UIButton.Configuration.CornerStyle`). */
+export type ReferralPasteButtonCornerStyle = 'dynamic' | 'fixed' | 'capsule' | 'large' | 'medium' | 'small';
+/** Maps to `UIPasteControl.Configuration.displayMode`. */
+export type ReferralPasteButtonDisplayMode = 'iconAndLabel' | 'iconOnly' | 'labelOnly';
 
 interface NativePasteControlProps {
   style?: StyleProp<ViewStyle>;
   onPaste?: (event: { nativeEvent: { text: string } }) => void;
+  pasteForegroundColor?: ColorValue;
+  pasteBackgroundColor?: ColorValue;
+  cornerStyle?: ReferralPasteButtonCornerStyle;
+  displayMode?: ReferralPasteButtonDisplayMode;
 }
 
 // Only required on iOS, where it backs the deterministic recovery tier —
@@ -22,6 +31,19 @@ export interface ReferralPasteButtonProps {
   readonly style?: StyleProp<ViewStyle>;
   /** Called once a valid, non-stale referral payload is read from the clipboard. */
   readonly onCode?: (code: string) => void;
+
+  // Theming — all optional, all system default if omitted. `UIPasteControl`
+  // is genuinely customizable (colors, corner shape, icon/label layout),
+  // just not *arbitrarily* so: there's no custom icon, font, or label text.
+  // That's deliberate on Apple's part, not a gap in this wrapper — the
+  // button's icon+text is a fixed, system-owned promise, and that fixed
+  // meaning is part of why it's allowed to skip the "would like to paste"
+  // prompt at all. Colors accept anything RN's color parser does (`'#fff'`,
+  // `'rgba(...)'`, a platform color, etc).
+  readonly pasteForegroundColor?: ColorValue;
+  readonly pasteBackgroundColor?: ColorValue;
+  readonly cornerStyle?: ReferralPasteButtonCornerStyle;
+  readonly displayMode?: ReferralPasteButtonDisplayMode;
 }
 
 /**
@@ -45,7 +67,14 @@ export interface ReferralPasteButtonProps {
  * Renders nothing on Android and on iOS below 16 (`UIPasteControl` isn't
  * available there) — safe to render unconditionally.
  */
-export function ReferralPasteButton({ style, onCode }: ReferralPasteButtonProps) {
+export function ReferralPasteButton({
+  style,
+  onCode,
+  pasteForegroundColor,
+  pasteBackgroundColor,
+  cornerStyle,
+  displayMode,
+}: ReferralPasteButtonProps) {
   const { config } = useReferralContext();
 
   if (Platform.OS !== 'ios' || !NativeReferralPasteControl) return null;
@@ -57,6 +86,10 @@ export function ReferralPasteButton({ style, onCode }: ReferralPasteButtonProps)
   return (
     <NativeReferralPasteControl
       style={style}
+      pasteForegroundColor={pasteForegroundColor}
+      pasteBackgroundColor={pasteBackgroundColor}
+      cornerStyle={cornerStyle}
+      displayMode={displayMode}
       onPaste={(event) => {
         const parsed = parseClipboardReferralPayload(event.nativeEvent.text, maxAgeSeconds);
         if (parsed) onCode?.(parsed.code);
