@@ -247,7 +247,7 @@ the iOS doc:**
 
 ---
 
-## 7. Separate the SDK's production website from the example app — Proposed
+## 7. Separate the SDK's production website from the example app — Dropped
 
 **Problem.** `examples/web` is currently doing double duty: it's meant to
 be a demo/reference implementation for engineers integrating the SDK, but
@@ -256,11 +256,15 @@ it's *also* the thing actually deployed and live-tested against
 and #4 above were as confusing as they were to track down — "the demo"
 and "the real thing being tested" were the same deployment.
 
-**Direction.** Split into two: `examples/web` stays a minimal reference
-implementation, and a separate app becomes the SDK's actual production
-website (the one hosted on Vercel for real). Exact location/naming
-(`apps/web`, a new top-level directory, etc.) still to be settled during
-implementation.
+**Direction considered.** Split into two: `examples/web` stays a minimal
+reference implementation, and a separate app becomes the SDK's actual
+production website (the one hosted on Vercel for real).
+
+**Decision: not doing this.** Revisited after the other three items in
+this batch shipped (docs merge, storage scope, iOS clipboard tier) —
+decided to leave `examples/web` doing double duty as-is rather than split
+it. Not implemented; `examples/web` remains both the reference
+implementation and the live deployment.
 
 ---
 
