@@ -6,7 +6,7 @@
   "keywords": ["referral", "deep-linking", "deferred", "react-native", "install-referrer", "attribution"],
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "types": "./src/index.ts",
   "react-native": "./src/index.ts",
   "exports": {
     ".": {

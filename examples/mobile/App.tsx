@@ -10,6 +10,7 @@ import {
 import {
   ReferralProvider,
   ReferralService,
+  ReferralPasteButton,
   collectFingerprint,
   useReferralCode,
   type ReferralConfig,
@@ -39,7 +40,7 @@ export default function App() {
 
 function Screen() {
   // The production entry point — a signup screen would use exactly this.
-  const { code, method, confidence, loading, claim } = useReferralCode();
+  const { code, method, confidence, loading, claim, onClipboardCode } = useReferralCode();
 
   const service = useMemo(() => new ReferralService(config), []);
   const [log, setLog] = useState<string[]>([]);
@@ -118,6 +119,38 @@ function Screen() {
         ) : null}
       </View>
 
+      {/* iOS-only deterministic tier — renders nothing on Android or iOS <16.
+          Three variants stacked to eyeball theming side by side. */}
+      <Text style={styles.step}>Paste referral code (iOS clipboard handoff):</Text>
+      <View style={styles.pasteRow}>
+        <ReferralPasteButton
+          onCode={(c) => {
+            onClipboardCode(c);
+            append(`clipboard paste → ${c}`);
+          }}
+          style={styles.pasteBtn}
+        />
+        <ReferralPasteButton
+          onCode={(c) => {
+            onClipboardCode(c);
+            append(`clipboard paste (themed) → ${c}`);
+          }}
+          style={styles.pasteBtn}
+          pasteForegroundColor="#FFFFFF"
+          pasteBackgroundColor="#6C63FF"
+          cornerStyle="capsule"
+        />
+        <ReferralPasteButton
+          onCode={(c) => {
+            onClipboardCode(c);
+            append(`clipboard paste (icon-only) → ${c}`);
+          }}
+          style={styles.pasteBtn}
+          pasteForegroundColor="#6C63FF"
+          displayMode="iconOnly"
+        />
+      </View>
+
       <Text style={styles.step}>Walk the flow:</Text>
       <Button label="1 · Simulate tapping the invite link" onPress={simulateLinkTap} />
       <Button label="2 · Recover code (first-launch flow)" onPress={recover} />
@@ -179,6 +212,8 @@ const styles = StyleSheet.create({
   value: { color: '#fff', fontSize: 28, fontWeight: '700' },
   meta: { color: '#a5a5b0', fontSize: 13 },
   step: { color: '#c9c9d1', fontSize: 13, marginTop: 12, fontWeight: '600' },
+  pasteRow: { flexDirection: 'row', gap: 10 },
+  pasteBtn: { flex: 1, height: 44 },
   btn: { backgroundColor: '#6C63FF', borderRadius: 12, padding: 15, alignItems: 'center' },
   btnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#3a3a45' },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 15 },

@@ -20,9 +20,17 @@ interface NativePasteControlProps {
 // Only required on iOS, where it backs the deterministic recovery tier —
 // requireNativeComponent would throw immediately on Android since nothing
 // registers this native view there, so it's only even attempted on iOS.
+//
+// The name here is 'ReferralPasteControl', NOT the manager's Obj-C class
+// name ('ReferralPasteControlManager') — confirmed against RN's own source
+// (RCTViewManagerModuleNameForClass in RCTComponentData.m) by actually
+// running this on a simulator, not assumed: RCTViewManager registration
+// strips a trailing "Manager" suffix from the class name to get the JS
+// view name, so requireNativeComponent must be called with the manager's
+// class name minus "Manager", not the class name itself.
 const NativeReferralPasteControl =
   Platform.OS === 'ios'
-    ? requireNativeComponent<NativePasteControlProps>('ReferralPasteControlManager')
+    ? requireNativeComponent<NativePasteControlProps>('ReferralPasteControl')
     : null;
 
 const DEFAULT_MATCH_WINDOW_SECONDS = 172800; // 48h, matching the backend's default
