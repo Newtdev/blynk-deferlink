@@ -193,13 +193,37 @@ Mobile-side validation before trusting it:
    `'clipboard'` addition to `MatchMethod`) for that infrastructure to log
    it itself.
 
-## Remaining open question
+## 4. `UIPasteControl` is buildable in React Native — Decided
 
-- **Prompt vs. `UIPasteControl`, technically.** The plain read is simplest
-  to build but shows the system "would like to paste" dialog on every
-  fresh install. `UIPasteControl` avoids that dialog but needs a visible
-  button (decision 1 above covers *where* — this is about *whether it's
-  buildable at all* in React Native, since it's a fairly new, low-level
-  UIKit widget existing RN clipboard packages don't obviously wrap). Needs
-  a short spike to confirm before committing to it over the plain-prompt
-  fallback.
+Spiked by researching against Apple's own `UIPasteControl` documentation
+and a working native implementation writeup, rather than assuming either
+way.
+
+**Verdict: confirmed feasible, no fundamental blocker.** `UIPasteControl`
+is a plain `UIControl` subclass — the same category as `UIButton` — which
+is exactly the case RN's native-component bridging (`RCTViewManager` /
+Fabric) is built for. Specifics that de-risk it:
+
+- **Touch handling is a non-issue, not a complication.** The control
+  manages its own tap internally as a self-contained control, so there's
+  no gesture-recognizer conflict with RN's JS-driven touch system — usually
+  the messiest part of wrapping an interactive native view, absent here.
+- **The target/protocol requirement is easy to satisfy.** It needs a
+  target conforming to `UIPasteConfigurationSupporting`; every
+  `UIResponder` conforms, and `UIView` is a `UIResponder`, so the native
+  wrapper view itself can be the target directly — no need to reach into
+  RN's root view controller.
+- **Styling is bounded but real.** `UIPasteControl.Configuration` exposes
+  colors, corner style, and icon/text visibility, mappable to RN props —
+  not arbitrary CSS-level styling, but enough to fit an app's design.
+
+**What it actually takes:** no existing npm package wraps this today, so
+it needs a small custom native module — instantiate `UIPasteControl`,
+override `paste(itemProviders:)`, forward the result to JS via a standard
+event callback (with the usual main-thread dispatch, since
+`NSItemProvider`'s completion handler is async — routine, not novel).
+Realistically a 1–3 day spike for someone comfortable with Swift + RN
+native modules, works under either the old bridge or Fabric.
+
+**Decision: commit to `UIPasteControl` over the plain system-prompt
+fallback.**

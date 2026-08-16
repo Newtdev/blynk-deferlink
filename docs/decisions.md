@@ -159,9 +159,13 @@ Key sub-decisions (detailed in the linked doc):
   Sparkle has its own event infrastructure for that; the SDK just needs
   to expose it through existing callbacks.
 
-**Still open:** whether `UIPasteControl` (the prompt-free variant) is
-realistically wrappable in React Native — needs a short spike before
-committing to it over the plain system-prompt read.
+**`UIPasteControl` confirmed buildable in React Native**, spiked against
+Apple's own docs rather than assumed — it's a plain `UIControl` subclass,
+the exact category RN's native-component bridging is built for, and its
+self-contained touch handling avoids the usual gesture-conflict pain of
+wrapping an interactive native view. No existing npm package wraps it, so
+it needs a small custom native module (~1–3 days). Committing to it over
+the plain system-prompt fallback. Full reasoning in the iOS doc.
 
 ---
 
