@@ -8,7 +8,10 @@ was decided.
 
 Entries are chronological. Status is one of: **Done** (implemented and
 merged), **Decided** (design settled, not yet built), **Proposed**
-(written up, awaiting a decision).
+(written up, awaiting a decision), **Rejected** (considered and
+deliberately not done — kept here so it doesn't get re-proposed and
+re-litigated from scratch later without the reasoning that already ruled
+it out).
 
 ---
 
@@ -38,6 +41,54 @@ backends' test suites were extended for the new behavior and re-verified
 against each other (Node's `node:test`, PHP's zero-dependency
 `tests/run.php`) since the two matchers are required to agree on what
 counts as a match.
+
+**Known limitations, surfaced reviewing this externally (worth recording,
+not acted on as changes):**
+- The decay curve depends entirely on `matchWindowHours` (default 48).
+  Recency stays above the ~10-point "crucial" mark (the amount needed,
+  combined with every other signal matching, to clear 70 without an IP
+  match) for roughly **16 hours** post-click at that default — not
+  minutes. Worth knowing the real number before reasoning about how much
+  the recency signal actually buys back after a network switch.
+- **Near-simultaneous similar devices can still collide.** Two iPhones of
+  the same model, same city, clicking within moments of each other look
+  close to identical to the matcher — Safari's iOS user agent is heavily
+  generalized, so device/screen/timezone/language alone don't reliably
+  distinguish them. Combined with `ORDER BY created_at DESC` (last-click-
+  wins on ties), a genuine ambiguous case resolves to whichever click was
+  most recent, which won't always be the correct one. Not a regression
+  from recency scoring — a pre-existing characteristic of coarse-grained
+  probabilistic matching that recency doesn't fix and slightly increases
+  the surface area for (see rejected proposal below).
+
+---
+
+## 1a. Dynamic per-request weight reallocation when IP is absent — Rejected
+
+**Proposal considered.** When an incoming match request has no IP match,
+reallocate `ip_match`'s points into `screen_dimensions` and `recency` for
+that request only, instead of leaving them unused — the reasoning being
+that it'd make a no-IP match easier to clear 70 in cases where recency has
+already decayed significantly.
+
+**Why it was rejected.**
+1. **It doesn't solve a real gap.** A fresh install with no IP match
+   already clears 70 today (75, per entry 1's math) — no reallocation
+   needed for the common case. It would only change behavior for installs
+   happening well after the click, which is a narrower case than it first
+   appears given the real ~16 hour recency runway above.
+2. **Where it would change something, it makes the known collision risk
+   worse, not better.** Pumping more weight into screen dimensions and
+   recency is pumping more weight into precisely the two signals already
+   identified as too coarse to distinguish two different real users
+   clicking around the same time (see entry 1's limitations). Solving the
+   IP-absent case by leaning harder on the least-distinguishing signals
+   trades one problem for a related one.
+3. **It breaks the fixed-weight-per-signal mental model** the current test
+   suite's exact-value assertions rely on, for a benefit that isn't
+   clearly there. If IP-absent scenarios need different handling later,
+   it's worth revisiting with a design that doesn't amplify the collision
+   risk to get there.
 
 ---
 
@@ -133,6 +184,19 @@ page genuinely being Sparkle-owned infrastructure by the time this ships
 first-party argument both to Apple and in general. See action item on
 the website split, below.
 
+**Worth being precise about: MMPs' custom/branded link domains don't
+change this analysis.** Branch and similar MMPs let customers front their
+tracking links with a custom domain (e.g. a client's own subdomain,
+CNAME'd to Branch's infrastructure) — partly for branding, partly because
+Universal Links' domain-verification mechanism often requires it. It's
+tempting to read that as making the setup more first-party, but it
+doesn't: the custom domain is a DNS-level/branding layer, not a change in
+where the data actually goes. The click is still processed, matched, and
+stored on the MMP's own servers, aggregated against their other clients'
+data same as always — Apple's definition of tracking is about who
+actually handles the data, not what the URL bar shows. A branded domain
+makes third-party processing *look* first-party without making it so.
+
 ---
 
 ## 6. Deterministic deferred deep linking for iOS (clipboard handoff) — Decided (design), not yet built
@@ -166,6 +230,20 @@ self-contained touch handling avoids the usual gesture-conflict pain of
 wrapping an interactive native view. No existing npm package wraps it, so
 it needs a small custom native module (~1–3 days). Committing to it over
 the plain system-prompt fallback. Full reasoning in the iOS doc.
+
+**Two additions from an external review of this plan, both folded into
+the iOS doc:**
+- **Clear the clipboard immediately after a successful read.** Prevents
+  the referral token from lingering and getting pasted somewhere
+  unrelated by accident later. Small addition, worth doing.
+- **In-app browsers (WhatsApp, Instagram) commonly restrict or fully
+  block clipboard write access** — and this project already special-cases
+  those browsers elsewhere (`InAppBrowserNotice.tsx`), suggesting a real
+  share of referral traffic arrives through them. If so, the clipboard
+  tier may simply be unavailable for a meaningful chunk of real clicks —
+  fingerprint matching stays load-bearing in practice, not a rare
+  backstop. This wasn't flagged in the original design and is worth being
+  explicit about rather than implying clipboard mostly replaces it.
 
 ---
 
@@ -274,3 +352,32 @@ just for caution: a match and a claim are two distinct moments
 completes signup and calls `claim()`), so purging too eagerly right after
 a match risks deleting data a legitimate, slightly-delayed claim still
 needs.
+
+---
+
+## 12. Privacy Manifest declaration for device model access — Rejected
+
+**Claim reviewed.** An external review (an AI-assisted second opinion,
+not a first-hand audit) of `packages/referral-mobile/src/fingerprint.ts`
+asserted that `DeviceInfo.getModel()` accesses a Required Reason API on
+iOS (via `sysctl`/`uname` for `hw.machine`) and needs a declared
+`PrivacyInfo.xcprivacy` entry to avoid App Store rejection risk. It
+proposed adding one.
+
+**Checked against Apple's own documentation rather than accepted at face
+value — the claim doesn't hold.** Apple's Required Reason API list is a
+fixed, small set of five categories: `FileTimestamp`, `SystemBootTime`,
+`DiskSpace`, `ActiveKeyboards`, `UserDefaults`. Device model access via
+`sysctl`/`hw.machine` isn't one of them — there's no declared connection
+between that API and any Required Reason category. The suggested fix
+also contradicted itself on inspection: the example XML declared
+`SystemBootTime`, not anything related to device model, while being
+described as covering device-model usage — a mismatch that was the first
+sign the underlying claim needed checking rather than trusting.
+`DeviceInfo.getUniqueId()` (IDFV) correctly *not* requiring a declaration
+was the one part of the same claim that did hold up.
+
+**Decision: no manifest entry added.** `getModel()` was never a
+restricted API to begin with — there's no real requirement to satisfy
+here, and adding a mismatched declaration risks causing confusion in
+review rather than preventing it.

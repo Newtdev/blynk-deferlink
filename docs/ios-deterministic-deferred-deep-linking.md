@@ -91,12 +91,9 @@ it's on-device, first-party, momentary. It doesn't require the ATT prompt.
   step wired into the download CTA; mobile needs a clipboard-read step,
   permission-prompt UX handling, and payload validation. Not a small
   change on either side.
-- **`UIPasteControl` React Native support is unconfirmed.** It's a
-  relatively new, low-level UIKit widget. Existing RN clipboard packages
-  (e.g. `@react-native-clipboard/clipboard`) wrap the plain read API, not
-  necessarily `UIPasteControl` — may need a small native module bridge if
-  we want the prompt-free variant. Needs a spike before committing to that
-  UX direction.
+- **`UIPasteControl` requires a small custom native module.** No existing
+  npm package wraps it — confirmed buildable (see decision 4 below), but
+  it's real native Swift work, not a drop-in dependency.
 - **Still needs a staleness guard.** Without one, a referral code copied
   weeks ago for an unrelated reason could get matched to today's
   unrelated install. The payload needs an issued timestamp and a max-age
@@ -107,6 +104,15 @@ it's on-device, first-party, momentary. It doesn't require the ATT prompt.
   the signal is guaranteed to be present. Permission can be denied, the
   clipboard can be overwritten. This is an additive improvement to the
   recovery rate, not a replacement that removes the need for a fallback.
+- **In-app browsers (WhatsApp, Instagram) commonly restrict or fully
+  block clipboard write access.** This project already special-cases
+  those browsers elsewhere (`InAppBrowserNotice.tsx`), which suggests a
+  real share of referral traffic arrives through them. If so, the
+  clipboard tier may be unavailable for a meaningful chunk of real
+  clicks, not just a rare edge case — fingerprint matching stays
+  load-bearing in practice. Worth confirming how much traffic is actually
+  affected before assuming clipboard becomes the primary path in volume,
+  not just in priority order.
 
 ## Comparison
 
@@ -157,7 +163,10 @@ Mobile-side validation before trusting it:
   `recoverIos()` as the first attempt, falling through to the existing
   `matchViaFingerprint()` on any failure (missing, denied, malformed, or
   stale payload) — mirrors how `recoverAndroid()` already falls through
-  from install referrer to fingerprint matching today.
+  from install referrer to fingerprint matching today. On a successful
+  read, clear the clipboard immediately after validating the payload —
+  prevents the token from lingering and getting pasted somewhere
+  unrelated by accident later.
 - **Types**: extend `MatchMethod` (`'install_referrer' | 'fingerprint'`)
   with `'clipboard'` so `onCodeFound` / analytics can distinguish it.
 - **Backend**: likely no schema changes required — claim/match already
