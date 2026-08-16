@@ -9,7 +9,7 @@ export { collectFingerprint } from './fingerprint';
 export { DEFAULT_API_ENDPOINT } from './api';
 export { readInstallReferrer } from './platform/android';
 export { createStorage, defaultAsyncStorageAdapter } from './storage';
-export type { ReferralStorage, StoredReferral } from './storage';
+export type { ReferralStorage } from './storage';
 
 export type {
   ReferralConfig,
