@@ -10,6 +10,7 @@ import {
 import {
   ReferralProvider,
   ReferralService,
+  ReferralPasteButton,
   collectFingerprint,
   useReferralCode,
   type ReferralConfig,
@@ -39,7 +40,7 @@ export default function App() {
 
 function Screen() {
   // The production entry point — a signup screen would use exactly this.
-  const { code, method, confidence, loading, claim } = useReferralCode();
+  const { code, method, confidence, loading, claim, onClipboardCode } = useReferralCode();
 
   const service = useMemo(() => new ReferralService(config), []);
   const [log, setLog] = useState<string[]>([]);
@@ -118,6 +119,24 @@ function Screen() {
         ) : null}
       </View>
 
+      {/* iOS-only deterministic tier — renders nothing on Android or iOS <16.
+          Themed icon+label: the recommended pattern — keeps the system
+          "Paste" icon+text (Apple won't let that part go), themed to the
+          app's own brand color so it reads as part of the UI instead of
+          a bare system control. See the package README's "Theming"
+          section for the icon-only/custom-copy alternative. */}
+      <Text style={styles.step}>Paste referral code (iOS clipboard handoff):</Text>
+      <ReferralPasteButton
+        onCode={(c) => {
+          onClipboardCode(c);
+          append(`clipboard paste → ${c}`);
+        }}
+        style={styles.pasteBtn}
+        pasteForegroundColor="#FFFFFF"
+        pasteBackgroundColor="#6C63FF"
+        cornerStyle="medium"
+      />
+
       <Text style={styles.step}>Walk the flow:</Text>
       <Button label="1 · Simulate tapping the invite link" onPress={simulateLinkTap} />
       <Button label="2 · Recover code (first-launch flow)" onPress={recover} />
@@ -179,6 +198,16 @@ const styles = StyleSheet.create({
   value: { color: '#fff', fontSize: 28, fontWeight: '700' },
   meta: { color: '#a5a5b0', fontSize: 13 },
   step: { color: '#c9c9d1', fontSize: 13, marginTop: 12, fontWeight: '600' },
+  // Matches btn below as closely as UIPasteControl allows: same background/
+  // text color and same rendered height (btn's height comes from its own
+  // padding: 15 + ~18pt line height at fontSize 15, so 48 here reproduces
+  // it since the native control has no padding of its own to compute
+  // from). cornerStyle: 'medium' was picked by comparing rendered
+  // screenshots against btn's borderRadius: 12 — UIPasteControl has no
+  // arbitrary radius, only named styles, and 'fixed' (tried first, by
+  // name alone) turned out visibly too subtle; 'medium' is the actual
+  // match.
+  pasteBtn: { height: 48, marginTop: 4 },
   btn: { backgroundColor: '#6C63FF', borderRadius: 12, padding: 15, alignItems: 'center' },
   btnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#3a3a45' },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 15 },

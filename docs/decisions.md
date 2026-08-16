@@ -247,7 +247,7 @@ the iOS doc:**
 
 ---
 
-## 7. Separate the SDK's production website from the example app — Proposed
+## 7. Separate the SDK's production website from the example app — Dropped
 
 **Problem.** `examples/web` is currently doing double duty: it's meant to
 be a demo/reference implementation for engineers integrating the SDK, but
@@ -256,11 +256,15 @@ it's *also* the thing actually deployed and live-tested against
 and #4 above were as confusing as they were to track down — "the demo"
 and "the real thing being tested" were the same deployment.
 
-**Direction.** Split into two: `examples/web` stays a minimal reference
-implementation, and a separate app becomes the SDK's actual production
-website (the one hosted on Vercel for real). Exact location/naming
-(`apps/web`, a new top-level directory, etc.) still to be settled during
-implementation.
+**Direction considered.** Split into two: `examples/web` stays a minimal
+reference implementation, and a separate app becomes the SDK's actual
+production website (the one hosted on Vercel for real).
+
+**Decision: not doing this.** Revisited after the other three items in
+this batch shipped (docs merge, storage scope, iOS clipboard tier) —
+decided to leave `examples/web` doing double duty as-is rather than split
+it. Not implemented; `examples/web` remains both the reference
+implementation and the live deployment.
 
 ---
 
@@ -417,3 +421,55 @@ resolver actually consults; nothing was resolving through them anyway.
 running from source) — this fix is specifically for the current
 ship-from-source phase via the `mobile-release` branch and shouldn't be
 carried forward unexamined once that changes.
+
+---
+
+## 14. Three bugs in the iOS clipboard tier, found only by actually running it — Done
+
+**Problem.** The clipboard tier had been verified with `swiftc -typecheck`
+against the real iOS 16 SDK and `tsc --noEmit`, but never an actual app
+build — that gap was flagged explicitly at the time. Wiring
+`ReferralPasteButton` into `examples/mobile` and running it on a real iOS
+18.5 simulator surfaced three real bugs, none of which typechecking could
+have caught:
+
+1. **`react-native.config.js` still said `ios: null`.** Written when this
+   package genuinely had no native code; never updated once the paste
+   control's Swift/podspec landed. Autolinking silently skipped the
+   package's iOS platform entirely — `ReferralMobilePasteControl.podspec`
+   would never have reached any consuming app's `Podfile`, in any app,
+   ever. Fixed by removing the `ios: null` override.
+
+2. **Top-level `types` pointed at a stale `dist/index.d.ts`.** Classic
+   TypeScript module resolution — which is Expo's own tsconfig default,
+   not an edge case — ignores the `exports` map entirely and follows
+   top-level `types`. A `dist/` from an old local build (Aug 13, before
+   the storage-scope and clipboard-tier work) was sitting on disk,
+   gitignored, silently swallowing every export added since —
+   `ReferralPasteButton` included. `tsc` in the example app failed with
+   "no exported member" while the package's own `tsc --noEmit` passed
+   clean, because only the *consumer's* resolution mode hit the stale
+   field. Fixed by pointing top-level `types` at `./src/index.ts` too
+   (matching what `exports.types` already did per decision #13) and
+   deleting the stale local `dist/`.
+
+3. **`requireNativeComponent('ReferralPasteControlManager')` used the
+   wrong name.** Confirmed against RN's own source
+   (`RCTViewManagerModuleNameForClass` in `RCTComponentData.m`), not
+   guessed: view manager registration strips a trailing `Manager` suffix
+   from the Obj-C class name to get the name JS must use. The registered
+   view is `ReferralPasteControl`; the manager class stays
+   `ReferralPasteControlManager`. This would have thrown `"was not found
+   in the UIManager"` in every consuming app, on the very first render.
+
+**Verification, this time for real.** Built and ran `examples/mobile` on
+an iOS 18.5 simulator with all three theming variants on screen; seeded
+the simulator clipboard via `xcrun simctl pbcopy` with a valid
+`sparkle_ref:v1:` payload; watched the control's enabled state react live
+to that pasteboard change; tapped it and confirmed the full round trip
+(`onPaste` → `parseClipboardReferralPayload` → `onCode` →
+`onClipboardCode` → `useReferralCode()`) landed `code: PASTE-99, method:
+clipboard` in the demo UI, and that the clipboard was cleared afterward.
+No RN-native-module change should be called verified again until it's
+been through this same real-build loop — typechecking alone missed all
+three of these.

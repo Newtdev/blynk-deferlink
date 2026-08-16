@@ -123,6 +123,112 @@ function SignupScreen() {
 }
 ```
 
+## iOS deterministic recovery — `ReferralPasteButton`
+
+Android has a deterministic path (Install Referrer, below). iOS has no OS
+equivalent, so fingerprint matching is the only *automatic* recovery it
+gets — reliable, but probabilistic. `ReferralPasteButton` adds a genuine
+deterministic tier for iOS, using the system clipboard as a same-device
+handoff from the web landing page (`@sparkle/referral-web`'s
+`writeClipboardReferral`) to the app's first launch.
+
+**This is required, not decorative, if you want iOS to have a
+deterministic path at all — and skipping it fails silently, not loudly.**
+Unlike fingerprint matching, it can't run automatically: Apple's paste
+APIs only grant clipboard access from an explicit user tap, so there's no
+way around rendering something tappable. If this component is never
+rendered, or the user never taps it, iOS just always falls through to
+fingerprint matching — no error, no signal, just quietly weaker matching
+on every install. Where you place it is entirely up to you (inline on the
+signup screen, a dedicated first-launch moment) — just make sure it's
+somewhere:
+
+```tsx
+import { useReferralCode, ReferralPasteButton } from '@sparkle/referral-mobile';
+
+function SignupScreen() {
+  const { code, method, claim, onClipboardCode } = useReferralCode();
+
+  return (
+    <View>
+      {/* Renders nothing on Android or iOS <16 — safe to always include. */}
+      <ReferralPasteButton onCode={onClipboardCode} style={{ height: 44 }} />
+
+      <TextInput value={code ?? ''} editable={!code} placeholder="Referral code (optional)" />
+    </View>
+  );
+}
+```
+
+A tap that finds a valid, non-stale payload overrides whatever the
+automatic fingerprint path already found (`method` becomes `'clipboard'`)
+— deterministic exact-match is strictly more trustworthy than a score.
+
+This ships native iOS code (a small `UIPasteControl` wrapper), which is
+why `pod install` is part of the install steps above — nothing extra to
+configure beyond that.
+
+### Theming
+
+`UIPasteControl` is a system control, not a plain button — it's genuinely
+customizable, just not *arbitrarily* so. You can theme colors, corner
+shape, and icon/label layout; you can't change the icon, the font, or the
+label text itself. That's deliberate on Apple's part: the button's fixed,
+system-owned icon+text is part of why it's allowed to skip the "would
+like to paste" prompt at all — a fully reskinnable control couldn't make
+that same unspoken promise to the user.
+
+**Recommended: theme colors, keep the icon+label.** This is what
+`examples/mobile` uses, and the pattern to reach for by default — it
+keeps the frictionless no-prompt UX (the entire point of this tier)
+while still reading as part of your app instead of a bare system
+control:
+
+```tsx
+<ReferralPasteButton
+  onCode={onClipboardCode}
+  style={{ height: 48 }}          // match your own buttons' rendered height
+  pasteForegroundColor="#FFFFFF"
+  pasteBackgroundColor="#6C63FF"  // your brand color
+  cornerStyle="medium"            // pick by comparing against your own buttons — see below
+/>
+```
+
+`cornerStyle` has no arbitrary-radius option, only named styles
+(`dynamic` | `fixed` | `capsule` | `large` | `medium` | `small`), and
+none of them documents what it actually looks like — `fixed` sounds like
+the obvious match for a fixed-radius design system but renders
+noticeably subtler than a typical `borderRadius: 12`; `medium` was the
+real match here, found by rendering the app on-device and comparing
+screenshots against the surrounding buttons, not by reading the name.
+Expect to do the same comparison against your own button style rather
+than trust the name.
+
+If even the system icon/label reads as too "systemy" next to the rest of
+your design system, drop to `displayMode="iconOnly"` and put your own
+on-brand copy beside it in JS instead — the control shrinks to just the
+consent-granting tap target, and the text becomes yours to fully own:
+
+```tsx
+<View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+  <Text style={yourBrandTextStyle}>Have a code? Tap to paste →</Text>
+  <ReferralPasteButton
+    onCode={onClipboardCode}
+    style={{ width: 32, height: 32 }}
+    pasteForegroundColor="#6C63FF"
+    displayMode="iconOnly"
+  />
+</View>
+```
+
+All four props (`pasteForegroundColor`, `pasteBackgroundColor`,
+`cornerStyle`, `displayMode`) are optional — omit any of them to get the
+system default for that aspect. Every one maps 1:1 to a real
+`UIPasteControl.Configuration` field (`baseForegroundColor`,
+`baseBackgroundColor`, `cornerStyle`, `displayMode`; full value lists in
+[`ReferralPasteButton.tsx`](src/ReferralPasteButton.tsx)); nothing here
+is invented.
+
 ## How recovery works
 
 ```
@@ -135,7 +241,8 @@ First launch → useReferralCode()
 │   └─ Empty referrer → fingerprint match    → method: fingerprint
 │
 └─ iOS:
-    └─ Fingerprint match (POST /referral/match) → method: fingerprint
+    ├─ Automatic: fingerprint match (POST /referral/match) → method: fingerprint
+    └─ User taps <ReferralPasteButton>, if rendered → method: clipboard (overrides the above)
 ```
 
 Recovery runs **once per install** — mounting the hook on several screens

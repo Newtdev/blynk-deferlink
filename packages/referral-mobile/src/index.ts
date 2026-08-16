@@ -11,6 +11,15 @@ export { readInstallReferrer } from './platform/android';
 export { createStorage, defaultAsyncStorageAdapter } from './storage';
 export type { ReferralStorage } from './storage';
 
+export { ReferralPasteButton } from './ReferralPasteButton';
+export type {
+  ReferralPasteButtonProps,
+  ReferralPasteButtonCornerStyle,
+  ReferralPasteButtonDisplayMode,
+} from './ReferralPasteButton';
+export { parseClipboardReferralPayload } from './platform/clipboardPayload';
+export type { ParsedClipboardReferral } from './platform/clipboardPayload';
+
 export type {
   ReferralConfig,
   ReferralResult,

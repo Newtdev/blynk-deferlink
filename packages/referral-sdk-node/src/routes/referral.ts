@@ -54,7 +54,7 @@ const claimSchema = z.object({
   referral_code: z.string().min(1).max(50),
   device_id: z.string().min(1).max(255),
   platform: z.enum(['ios', 'android']),
-  method: z.enum(['install_referrer', 'fingerprint']),
+  method: z.enum(['install_referrer', 'fingerprint', 'clipboard']),
   user_id: z.string().max(255).nullish(),
   click_id: z.string().max(36).nullish(),
   confidence: z.number().nullish(),

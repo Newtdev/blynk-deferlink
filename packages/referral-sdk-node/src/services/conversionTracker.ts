@@ -8,7 +8,7 @@ export interface ClaimInput {
   referralCode: string;
   deviceId: string;
   platform: 'ios' | 'android';
-  matchMethod: 'install_referrer' | 'fingerprint';
+  matchMethod: 'install_referrer' | 'fingerprint' | 'clipboard';
   clickId?: string | null;
   userId?: string | null;
   confidence?: number | null;

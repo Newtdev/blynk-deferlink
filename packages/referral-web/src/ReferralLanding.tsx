@@ -6,6 +6,7 @@ import { StoreButton } from './components/StoreButton';
 import { CountdownRedirect } from './components/CountdownRedirect';
 import { InAppBrowserNotice } from './components/InAppBrowserNotice';
 import { getAppSchemeUrl, getStoreUrl } from './utils/storeUrls';
+import { writeClipboardReferral } from './utils/clipboardHandoff';
 import type { ReferralTheme } from './types';
 
 export interface ReferralLandingProps {
@@ -68,10 +69,16 @@ export function ReferralLanding({
   const appOpened = useRef(false);
   const [redirected, setRedirected] = useState(false);
 
-  const redirectToStore = useCallback(() => {
+  const redirectToStore = useCallback(async () => {
     if (appOpened.current || redirected) return;
     setRedirected(true);
     onRedirect?.(platform);
+    // iOS only — Android recovers deterministically via the Install
+    // Referrer already, no clipboard handoff needed. Awaited so the write
+    // actually completes before navigation tears the page down.
+    if (platform === 'ios') {
+      await writeClipboardReferral(referralCode);
+    }
     window.location.href = getStoreUrl(platform, referralCode, config);
   }, [platform, referralCode, config, onRedirect, redirected]);
 

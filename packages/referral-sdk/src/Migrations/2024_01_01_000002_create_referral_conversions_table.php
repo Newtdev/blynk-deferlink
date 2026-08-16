@@ -15,7 +15,7 @@ return new class extends Migration {
             $table->string('referral_code', 50);
             $table->string('device_id', 255)->unique();
             $table->enum('platform', ['ios', 'android']);
-            $table->enum('match_method', ['install_referrer', 'fingerprint']);
+            $table->enum('match_method', ['install_referrer', 'fingerprint', 'clipboard']);
             $table->decimal('match_confidence', 5, 2)->nullable();
             $table->string('user_id', 255)->nullable();
             $table->timestamp('created_at')->useCurrent();
