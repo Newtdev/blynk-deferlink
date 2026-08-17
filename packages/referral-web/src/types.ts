@@ -28,7 +28,11 @@ export interface ReferralConfig {
   appScheme: string;
   /** Android application id, e.g. "com.sparkle.app". Ignored if androidStoreUrl is set. */
   androidPackage: string;
-  /** Numeric App Store id, e.g. "123456789". Ignored if iosStoreUrl is set. */
+  /**
+   * Numeric App Store id, e.g. "123456789". Ignored if iosStoreUrl is set.
+   * Composes into a bare `apps.apple.com/app/id<id>` URL with no region —
+   * set iosStoreUrl instead for production, see its doc below.
+   */
   iosAppId: string;
   /**
    * Full Play Store URL to use as-is instead of composing one from
@@ -41,6 +45,14 @@ export interface ReferralConfig {
    * Full App Store URL to use as-is instead of composing one from iosAppId.
    * Used verbatim — iOS has no install-referrer mechanism to merge a param
    * into, so there's nothing this needs to add.
+   *
+   * Set this explicitly in production rather than relying on iosAppId's
+   * bare fallback (`apps.apple.com/app/id<id>`, no region segment) — a
+   * region-less link is the kind most likely to trigger the App Store's
+   * "This app may not be available in your language" interstitial, seen in
+   * real-device testing. Use the full canonical shape instead, with your
+   * primary market's country code:
+   *   https://apps.apple.com/<country>/app/<your-app-slug>/id<iosAppId>
    */
   iosStoreUrl?: string;
   /** ms to wait for the app to open before falling back to the store. */
