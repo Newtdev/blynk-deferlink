@@ -8,8 +8,6 @@ export type { RecoveryOutcome } from './ReferralService';
 export { collectFingerprint } from './fingerprint';
 export { DEFAULT_API_ENDPOINT } from './api';
 export { readInstallReferrer } from './platform/android';
-export { createStorage, defaultAsyncStorageAdapter } from './storage';
-export type { ReferralStorage } from './storage';
 
 export { ReferralPasteButton } from './ReferralPasteButton';
 export type {
@@ -23,7 +21,6 @@ export type { ParsedClipboardReferral } from './platform/clipboardPayload';
 export type {
   ReferralConfig,
   ReferralResult,
-  ReferralStorageAdapter,
   DeviceFingerprint,
   MatchResponse,
   MatchMethod,

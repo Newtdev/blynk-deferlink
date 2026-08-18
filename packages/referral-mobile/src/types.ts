@@ -1,21 +1,6 @@
 export type MatchMethod = 'install_referrer' | 'fingerprint' | 'clipboard';
 export type MobilePlatform = 'ios' | 'android';
 
-/**
- * The smallest possible persistence contract — a key/value store with async
- * get/set/remove. AsyncStorage satisfies this natively; wrapping MMKV,
- * SQLite, Keychain, or anything else is a few lines (MMKV's API is
- * synchronous, so its adapter just wraps each call in `Promise.resolve`).
- * Matches the shape `redux-persist` uses for the same reason: it lets a
- * project bring whatever storage engine it already has instead of this SDK
- * forcing a second one into the app.
- */
-export interface ReferralStorageAdapter {
-  getItem(key: string): Promise<string | null>;
-  setItem(key: string, value: string): Promise<void>;
-  removeItem(key: string): Promise<void>;
-}
-
 export interface ReferralConfig {
   /**
    * Base URL of the referral backend. Defaults to the production endpoint
@@ -39,14 +24,6 @@ export interface ReferralConfig {
   minConfidence?: number;
   /** Max ms to wait for the match request before giving up. */
   matchTimeoutMs?: number;
-  /**
-   * Where the "already processed" flag is persisted — not the recovered
-   * code itself; see ReferralResult.claim for why. Defaults to a
-   * lazily-loaded `@react-native-async-storage/async-storage` adapter if
-   * omitted — pass your own to use MMKV, SQLite, etc. instead and skip
-   * installing AsyncStorage entirely. See ReferralStorageAdapter.
-   */
-  storageAdapter?: ReferralStorageAdapter;
   /** Called as soon as a code is recovered by any method. */
   onCodeFound?: (code: string, method: MatchMethod) => void;
   /** Called when no code could be recovered. */
@@ -87,8 +64,9 @@ export interface ReferralResult {
    * Records the conversion after signup. Call with just `userId` for the
    * common case (claiming the `code` this same hook call just recovered).
    * Pass `code` explicitly only if the app is claiming a code it recovered
-   * and stored itself in an *earlier* session — the SDK doesn't persist
-   * the code across restarts, only whether recovery was attempted.
+   * and stored itself in an *earlier* session — the SDK persists nothing
+   * to disk at all, so a fresh app launch has no memory of a previous
+   * recovery unless the app kept it.
    */
   claim: (userId: string, code?: string) => Promise<ClaimResult>;
   /**
