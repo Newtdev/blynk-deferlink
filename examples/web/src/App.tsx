@@ -9,8 +9,8 @@ const config = {
   // androidPackage/iosAppId are only used as a fallback when the *StoreUrl
   // envs below aren't set — real values here, not placeholders, matter
   // only if you're relying on that fallback. Prefer setting the full URLs.
-  androidPackage: 'com.sparkle.app',
-  iosAppId: '123456789',
+  androidPackage: 'ng.sparkle.Sparkle_android.prod',
+  iosAppId: '1475491602',
   // Full store links, set directly rather than composed — see
   // .env.production. iosStoreUrl in particular should always be the full
   // regioned URL (apps.apple.com/<country>/app/<slug>/id<id>), not just an
