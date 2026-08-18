@@ -673,3 +673,11 @@ write, same as before) — purely a UX nudge: a short countdown reads as
 longer one gives the CTA button time to actually be noticed and tapped
 before the passive path takes over. Consuming apps can still override
 `countdownSeconds` explicitly if 8s doesn't fit their landing page.
+
+**Follow-up bug, same day.** The demo page never actually showed the new
+default — `examples/web/src/App.tsx` had `countdownSeconds={3}` hardcoded
+explicitly on `<ReferralLanding>`, silently overriding the SDK default
+regardless of what it was changed to. Caught because the live site still
+showed a 3s countdown after deploying the 8s default. Removed the
+override rather than bumping it to `{8}`, so the demo stays in sync with
+the SDK default automatically if it changes again.
