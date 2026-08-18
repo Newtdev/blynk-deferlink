@@ -476,7 +476,20 @@ three of these.
 
 ---
 
-## 15. Real-device clipboard tier testing surfaced two more gaps — Done (diagnosis), fix pending
+## 15. Real-device clipboard tier testing surfaced two more gaps — superseded, see #17
+
+**Correction, added after #17 was found.** The actual root cause of every
+symptom below turned out to be much simpler than either diagnosis here:
+`referral-web-demo` (the site these tests ran against) hadn't
+successfully deployed since **Aug 14** — two days *before* the clipboard
+tier was even merged to `main` (Aug 16). Every test in this entry, and
+the follow-up "90B1LD" / "active but pastes nothing" reports after it,
+were run against a build with no clipboard-write code in it at all. Once
+#17's deploy fix shipped the real code for the first time, the clipboard
+tier worked correctly on the first two real attempts. The findings below
+are still real, correct readings of the code as it existed at the time —
+kept for the record, not deleted — but they were not what was actually
+happening on the device. Don't treat this entry as a live diagnosis.
 
 **Problem.** First real-device test (physical iPhone SE, real Safari →
 real App Store redirect → real app install), as opposed to every prior
