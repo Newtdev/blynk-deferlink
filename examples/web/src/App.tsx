@@ -49,7 +49,10 @@ export function App() {
         title="You've been invited"
         subtitle="Sign up and get ₦500 bonus"
         ctaText="Download the app"
-        countdownSeconds={3}
+        // Not set explicitly — inherits ReferralLanding's own default
+        // (8s, biased toward the tap over the passive countdown; see
+        // docs/decisions.md #18). Was hardcoded to 3 here before, which
+        // silently overrode that default regardless of what it was set to.
         theme={{ primaryColor: '#6C63FF', radius: '14px' }}
         onRedirect={(p) => console.log('redirect →', p)}
       />
