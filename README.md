@@ -26,10 +26,6 @@ npm install github:Newtdev/blynk-referral#mobile-release react-native-device-inf
 # Required if you build for Android — see below for why it's not optional:
 npm install react-native-play-install-referrer
 
-# Recommended unless your app already has its own storage engine (MMKV,
-# SQLite, etc.) — see "Storage" below if it does:
-npm install @react-native-async-storage/async-storage
-
 cd ios && pod install
 ```
 
@@ -62,10 +58,9 @@ settle for the weaker one by default. If it's missing, `useReferralCode()`
 throws a clear error rather than silently falling back to fingerprinting — an
 iOS-only build never touches this dependency at all.
 
-`@react-native-async-storage/async-storage` is the one **optional** peer:
-without it, you must supply your own `storageAdapter` (below) — the SDK won't
-silently do nothing there either, it throws a clear error telling you to do
-one or the other.
+That's the whole dependency list — this SDK has no storage dependency at
+all, optional or otherwise. See "Storage" below for what that actually
+means and the one thing it changes about where you mount `useReferralCode()`.
 
 > Note: earlier versions of this package (and the original project spec)
 > referenced a package named `react-native-android-install-referrer`. That
@@ -232,9 +227,7 @@ is invented.
 ## How recovery works
 
 ```
-First launch → useReferralCode()
-│
-├─ Already attempted this install (in an earlier session)? → nothing new to report
+Mount useReferralCode() → recover()
 │
 ├─ Android:
 │   ├─ Read Install Referrer → parse code   → method: install_referrer
@@ -245,52 +238,51 @@ First launch → useReferralCode()
     └─ User taps <ReferralPasteButton>, if rendered → method: clipboard (overrides the above)
 ```
 
-Recovery runs **once per install** — mounting the hook on several screens
-within the same session is safe and free (cached in memory, no repeat network
-calls). A conversion is recorded once per device; a second `claim()` returns
+Recovery runs once per mount, cached in memory for the rest of the
+session — mounting the hook on several screens within the same session is
+safe and free, no repeat network calls. There's no persistence past
+that: a fresh app launch always runs recovery again from scratch. See
+"Storage" below for why, and where that means this hook should (and
+shouldn't) be mounted.
+
+A conversion is recorded once per device; a second `claim()` returns
 `already_claimed` — that check is entirely server-side, nothing to manage
 on the client.
 
 ## Storage
 
-The SDK persists exactly one thing: whether recovery has already been
-attempted for this install — not the recovered code itself. That's
-deliberate, not an oversight: most apps already have their own storage
-(Redux, MMKV) and shouldn't need a second copy of the code living in this
-SDK too. `useReferralCode()` hands you `code` directly on the launch that
-recovers it (or via the `onCodeFound` callback); if you need it again in a
-*later* session, store it yourself the same way you'd store anything else,
-and pass it to `claim()` explicitly then — see the reference below.
+The SDK persists nothing to disk — no AsyncStorage, no dependency to
+install, no adapter to configure. `recover()`'s result lives in memory
+only, for the current session; a fresh app launch has no memory of a
+previous one. `useReferralCode()` hands you `code` directly on the call
+that recovers it (or via the `onCodeFound` callback) — remembering it
+past that, if you need to, is entirely your app's job, the same way
+you'd store anything else (Redux, MMKV, whatever you already have). See
+"Claiming a code in a later session" below for that case.
 
-By default the "already attempted" flag is persisted with a lazily-loaded
-`@react-native-async-storage/async-storage`. If your app already has its own
-storage engine, there's no need to also install and ship AsyncStorage — pass
-a `storageAdapter` instead. The contract is the smallest possible key/value
-shape (the same one `redux-persist` uses for this exact reason), so wrapping
-anything else is a few lines:
+**This changes where you should mount `useReferralCode()`.** `/match` is
+rate-limited per device (default 5/day, server-enforced). Because nothing
+here persists "has recovery already run," calling `recover()`
+unconditionally on *every* app launch — e.g. from a provider mounted at
+your app's root, alongside navigation — will re-hit `/match` on every
+single cold start, and a normally-active user reopening the app more
+than a handful of times in a day will burn through that budget on
+routine opens, possibly before a real match ever gets the chance to run.
 
-```tsx
-import { MMKV } from 'react-native-mmkv';
-import type { ReferralStorageAdapter } from '@sparkle/referral-mobile';
-
-const mmkv = new MMKV();
-
-const mmkvAdapter: ReferralStorageAdapter = {
-  getItem: async (key) => mmkv.getString(key) ?? null,
-  setItem: async (key, value) => mmkv.set(key, value),
-  removeItem: async (key) => mmkv.delete(key),
-};
-
-const referralConfig = {
-  storageAdapter: mmkvAdapter,
-  // ...
-};
-```
-
-With `storageAdapter` set, `@react-native-async-storage/async-storage` never
-needs to be installed at all — one storage engine in your app, not two, and
-one less native dependency's version to keep compatible with the rest of
-your project.
+Mount it on a **one-time flow instead** — a signup or onboarding screen a
+given install visits once, not something that mounts on every app open.
+That's not a hypothetical: it's the actual integration pattern this was
+designed around (referral recovery only ever matters once, at signup).
+If your app's architecture makes that hard to guarantee — e.g. a single
+top-level provider that can't easily be scoped to just the signup
+flow — track "already attempted" yourself (a single boolean in whatever
+storage you already have) and skip mounting the hook, or skip calling
+`claim()`, once that's true. This SDK deliberately doesn't do that for
+you anymore; duplicate-*signup* protection was never this flag's job
+anyway (that's `referral_conversions`' unique `device_id` index,
+entirely server-side) — it only ever protected against wasting the
+match-rate-limit budget, and that's now on your app to manage if your
+mount point doesn't already guarantee it naturally.
 
 ### Claiming a code in a later session
 
@@ -328,7 +320,6 @@ type the code from the landing page by hand.
 | `appScheme` | no | Custom scheme for deep-link handling. |
 | `matchTimeoutMs` | no | Max wait for the match request (default 5000). |
 | `matchWindow` / `minConfidence` | no | Informational; the server enforces both. |
-| `storageAdapter` | no | Custom persistence for the "already attempted" flag only (MMKV, SQLite, etc) — not the code itself. Defaults to AsyncStorage. See "Storage" above. |
 | `onCodeFound` / `onNoCode` | no | Recovery callbacks. |
 
 ## Build

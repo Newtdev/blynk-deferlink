@@ -3,7 +3,6 @@ import { createApi } from './api';
 import { collectFingerprint } from './fingerprint';
 import { recoverAndroid } from './platform/android';
 import { recoverIos } from './platform/ios';
-import { createStorage, defaultAsyncStorageAdapter, type ReferralStorage } from './storage';
 import type {
   ClaimResult,
   DeviceFingerprint,
@@ -20,40 +19,34 @@ export interface RecoveryOutcome {
 /**
  * Coordinates one-time referral recovery.
  *
- * Idempotent within a session: `lastRecovery` caches the result in memory
- * so mounting the hook on multiple screens is safe and free (no repeat
- * network calls). Idempotent *across* launches too, but differently — only
- * a persisted "has this install already been attempted" flag survives a
- * restart, not the recovered code itself. That's deliberate: most apps
- * already have their own storage (Redux, MMKV) and shouldn't need a second
- * copy of the code living in this SDK — see storage.ts. It also means a
- * fresh JS instance after a restart can't replay a code it never kept, so
- * `recover()` correctly reports nothing new rather than pretending to.
+ * The SDK persists nothing to disk — no AsyncStorage, no dependency to
+ * install, no storageAdapter to configure. `lastRecovery` caches the
+ * result in memory only, so mounting the hook on multiple screens within
+ * the same session is safe and free (no repeat network calls), but a
+ * fresh app launch always calls `recover()` again from scratch.
+ *
+ * That's a deliberate tradeoff, not an oversight: `/match` is rate-limited
+ * per device (default 5/day). Calling `recover()` unconditionally on
+ * *every* app launch — e.g. from a provider mounted at the app root — will
+ * burn through that budget on routine opens. This SDK is designed to be
+ * mounted on a one-time flow instead (a signup/onboarding screen a given
+ * install visits once, not an always-on root component) — see the README
+ * before wiring this in anywhere else. Duplicate-signup protection is
+ * unaffected either way: it's entirely server-side (device_id is unique
+ * per conversion), not something client persistence was ever providing.
  */
 export class ReferralService {
   private readonly api;
-  private readonly storage: ReferralStorage;
   private lastRecovery: RecoveryOutcome | null = null;
 
   constructor(private readonly config: ReferralConfig) {
     this.api = createApi(config);
-    // Falls back to AsyncStorage (lazily required) only if the project
-    // didn't supply its own storageAdapter — see ReferralStorageAdapter.
-    this.storage = createStorage(config.storageAdapter ?? defaultAsyncStorageAdapter());
   }
 
   async recover(): Promise<RecoveryOutcome> {
     // Already ran this session (e.g. the hook mounted on a second screen) —
     // replay the in-memory result instead of hitting the network again.
     if (this.lastRecovery) return this.lastRecovery;
-
-    if (await this.storage.isProcessed()) {
-      // Recovery was already attempted in an earlier session. The SDK
-      // doesn't keep the result around across restarts, so there's
-      // nothing new to report — if the app needs the code again later, it
-      // needed to have stored it itself when onCodeFound first fired.
-      return { code: null, method: null, confidence: null };
-    }
 
     const fingerprint = await collectFingerprint();
     let confidence: number | null = null;
@@ -74,9 +67,6 @@ export class ReferralService {
       Platform.OS === 'android'
         ? await recoverAndroid(fingerprint, matchViaFingerprint)
         : await recoverIos(fingerprint, matchViaFingerprint);
-
-    // Recovery runs once per install regardless of result — don't re-scan.
-    await this.storage.markProcessed();
 
     const result: RecoveryOutcome = { code: outcome.code, method: outcome.method, confidence };
     this.lastRecovery = result;
@@ -133,16 +123,11 @@ export class ReferralService {
     const result: RecoveryOutcome = { code, method: 'clipboard', confidence: null };
     this.lastRecovery = result;
     this.config.onCodeFound?.(code, 'clipboard');
-    // Best-effort — if fingerprint recovery already ran and set this, fine;
-    // if it's still in flight, this pre-empts it from re-running pointlessly
-    // once the deterministic result is already in hand.
-    void this.storage.markProcessed();
     return result;
   }
 
-  /** Test/debug helper — clears recovery state so the flow can run again. */
-  async reset(): Promise<void> {
+  /** Test/debug helper — clears the in-memory recovery cache so `recover()` runs again. */
+  reset(): void {
     this.lastRecovery = null;
-    await this.storage.reset();
   }
 }
