@@ -56,7 +56,14 @@ export function ReferralLanding({
   title = "You've been invited",
   subtitle,
   ctaText,
-  countdownSeconds = 3,
+  // Deliberately longer than a typical "redirecting…" countdown: tapping
+  // the CTA directly is the only path that can carry the clipboard payload
+  // (writeClipboardReferral needs a real user gesture — see
+  // docs/decisions.md #15/#18). A longer window biases users toward
+  // noticing and tapping the button instead of just waiting it out; the
+  // passive auto-redirect still works fine either way, just falls back to
+  // fingerprint-only matching on the app side, same as it always has.
+  countdownSeconds = 8,
   theme,
   onAppOpen,
   onRedirect,
@@ -73,10 +80,6 @@ export function ReferralLanding({
     if (appOpened.current || redirected) return;
     setRedirected(true);
     onRedirect?.(platform);
-    // Temporary debug logging — tracing a real-device report that the
-    // clipboard tier isn't carrying the code through correctly. Remove
-    // once that's resolved (see docs/decisions.md #15).
-    console.log('[referral-web] redirectToStore', { platform, referralCode });
     // iOS only — Android recovers deterministically via the Install
     // Referrer already, no clipboard handoff needed. Awaited so the write
     // actually completes before navigation tears the page down.
