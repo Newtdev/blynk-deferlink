@@ -73,6 +73,10 @@ export function ReferralLanding({
     if (appOpened.current || redirected) return;
     setRedirected(true);
     onRedirect?.(platform);
+    // Temporary debug logging — tracing a real-device report that the
+    // clipboard tier isn't carrying the code through correctly. Remove
+    // once that's resolved (see docs/decisions.md #15).
+    console.log('[referral-web] redirectToStore', { platform, referralCode });
     // iOS only — Android recovers deterministically via the Install
     // Referrer already, no clipboard handoff needed. Awaited so the write
     // actually completes before navigation tears the page down.
