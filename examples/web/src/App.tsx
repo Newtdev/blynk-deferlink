@@ -6,8 +6,17 @@ import { ReferralProvider, ReferralLanding } from '@sparkle/referral-web';
 const config = {
   apiEndpoint: import.meta.env.VITE_API_ENDPOINT ?? 'http://localhost:8787/api',
   appScheme: 'sparkleapp',
+  // androidPackage/iosAppId are only used as a fallback when the *StoreUrl
+  // envs below aren't set — real values here, not placeholders, matter
+  // only if you're relying on that fallback. Prefer setting the full URLs.
   androidPackage: 'com.sparkle.app',
   iosAppId: '123456789',
+  // Full store links, set directly rather than composed — see
+  // .env.production. iosStoreUrl in particular should always be the full
+  // regioned URL (apps.apple.com/<country>/app/<slug>/id<id>), not just an
+  // id — see docs/decisions.md #16 for why a bare id-only link is risky.
+  iosStoreUrl: import.meta.env.VITE_IOS_STORE_URL || undefined,
+  androidStoreUrl: import.meta.env.VITE_ANDROID_STORE_URL || undefined,
   appOpenTimeout: 2000,
 };
 

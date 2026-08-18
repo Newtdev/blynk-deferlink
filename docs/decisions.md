@@ -303,7 +303,7 @@ that would come from removing the guard entirely is avoided.
 
 ---
 
-## 9. Play Store / App Store links via environment variables — Decided
+## 9. Play Store / App Store links via environment variables — Done
 
 **Problem.** `androidPackage`/`iosAppId` (or their `*StoreUrl` overrides)
 were hardcoded inline in the demo app's config object. Once the SDK
@@ -315,6 +315,26 @@ code change.
 website, the same pattern `apiEndpoint` already uses via
 `VITE_API_ENDPOINT`. Keeps the real store links out of source, and
 redeployable without touching code.
+
+**Implemented later than intended, and it mattered.** #7 (the website
+split this was originally justified by) was later decided against — but
+the underlying problem turned out to be real regardless: `iosAppId` sat
+as a literal placeholder (`'123456789'`) in `examples/web/src/App.tsx`
+long enough that every App Store redirect from the live
+`referral-web-demo` deployment was pointing at a nonexistent listing —
+confirmed via a direct request, a plain 404, not even an Apple-rendered
+error page. See the correction on #16: the "may not be available in your
+language" prompt reported from real-device testing predates this fix and
+can't be safely attributed to the region-code theory anymore, since the
+link it came from wasn't reliably pointing at the real app at all.
+
+**Implementation.** `VITE_IOS_STORE_URL`/`VITE_ANDROID_STORE_URL` in
+`examples/web/.env.production`, wired to `ReferralConfig.iosStoreUrl`/
+`androidStoreUrl` (both already existed as SDK-level overrides — this was
+purely about actually using them instead of the hardcoded fallback
+fields). Left as empty pending the real URLs; `androidPackage`/`iosAppId`
+remain as a fallback in source but should not be trusted as real values
+until someone updates them too.
 
 ---
 
@@ -565,7 +585,15 @@ indistinguishable from outside the request.
 
 ---
 
-## 16. Default iOS store URL has no region code — likely cause of the "may not be available in your language" App Store prompt
+## 16. Default iOS store URL has no region code — unconfirmed as the actual cause, see #9
+
+**Correction, added once #9 landed.** `iosAppId` was sitting as a literal
+placeholder (`'123456789'`) at the time this report came in — confirmed
+to 404, not even a real (if wrongly-localized) listing. The region-code
+theory below is still a real, worth-fixing gap in the default URL shape,
+but it can no longer be credited as *the* explanation for the original
+report — that redirect wasn't reliably reaching the real app at all. Left
+in place as a genuine finding, not a confirmed root cause.
 
 **Problem.** `getStoreUrl()`'s default iOS fallback
 (`packages/referral-web/src/utils/storeUrls.ts`) composes
