@@ -573,3 +573,33 @@ relying on the bare `iosAppId`-only fallback. Not something the SDK's
 default should hardcode a region for — a general-purpose default has no
 correct single country to assume — so this is a per-project config fix,
 not an SDK code fix.
+
+---
+
+## 17. `referral-web-demo`'s Vercel deploys were silently broken — Done
+
+**Problem, found trying to ship debug logging.** `examples/web/vite.config.ts`
+resolves `@sparkle/referral-web` via an alias straight to
+`packages/referral-web/src/index.ts` (deliberate — ships from source, no
+build step, same pattern as the mobile package). The Vercel project's
+Root Directory had never been explicitly set, which meant every CLI
+deploy run from inside `examples/web` — the only way it had ever been
+deployed — uploaded *only* that subdirectory. The alias's relative
+`../../packages/referral-web/src/index.ts` resolved outside the uploaded
+tree entirely, so the build failed on literally every deploy attempt.
+Nothing in the repo caught this because nothing had force-rebuilt and
+redeployed `examples/web` since the source-alias approach was introduced
+— the last successful production build predates it.
+
+**Fix.** `vercel project update referral-web-demo --root-directory
+examples/web`, then deploy from the **monorepo root** (not from inside
+`examples/web`) so the whole tree — siblings included — actually gets
+uploaded. The file count crosses Vercel's default upload limit for a
+full monorepo, so root deploys need `--archive=tgz`:
+```
+cd <repo root>
+vercel --prod --yes --archive=tgz
+```
+Deploying from inside `examples/web` will silently go back to the old,
+broken, subtree-only behavior — the root directory setting only helps
+once the *whole* tree is actually uploaded for Vercel to find it in.
