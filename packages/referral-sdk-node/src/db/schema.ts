@@ -95,3 +95,40 @@ export const referralRateLimitHits = pgTable(
   },
   (t) => [index('idx_bucket_created').on(t.bucketKey, t.createdAt)],
 );
+
+/**
+ * One row per /match request, success or failure — added specifically
+ * because a genuine low-confidence scoring miss and a client
+ * config/network error were otherwise indistinguishable from outside the
+ * request (see docs/decisions.md #15). Stores the incoming fingerprint
+ * plus the best candidate score found (even when it didn't clear
+ * minConfidence), so a failed real-device match can actually be debugged
+ * after the fact instead of reproduced blind.
+ */
+export const referralMatchAttempts = pgTable(
+  'referral_match_attempts',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    deviceId: varchar('device_id', { length: 255 }).notNull(),
+    platform: varchar('platform', { length: 10 }).notNull(),
+
+    // What was actually submitted, for comparing against the click row it
+    // scored best against.
+    ipAddress: varchar('ip_address', { length: 45 }).notNull(),
+    userAgent: text('user_agent'),
+    deviceModel: varchar('device_model', { length: 100 }),
+    screenWidth: integer('screen_width'),
+    screenHeight: integer('screen_height'),
+    timezone: varchar('timezone', { length: 100 }),
+    language: varchar('language', { length: 35 }),
+
+    // Outcome
+    matched: boolean('matched').notNull(),
+    candidateCount: integer('candidate_count').notNull(),
+    bestScore: doublePrecision('best_score'),
+    bestClickId: varchar('best_click_id', { length: 36 }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('idx_match_attempts_device_created').on(t.deviceId, t.createdAt)],
+);

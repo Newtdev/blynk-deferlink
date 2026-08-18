@@ -473,3 +473,103 @@ clipboard` in the demo UI, and that the clipboard was cleared afterward.
 No RN-native-module change should be called verified again until it's
 been through this same real-build loop — typechecking alone missed all
 three of these.
+
+---
+
+## 15. Real-device clipboard tier testing surfaced two more gaps — Done (diagnosis), fix pending
+
+**Problem.** First real-device test (physical iPhone SE, real Safari →
+real App Store redirect → real app install), as opposed to every prior
+verification which was simulator-only. Two distinct symptoms, two
+distinct causes — neither a regression in logic that worked before, both
+things a simulator-only test structurally couldn't have caught.
+
+**1. The paste button showed inactive on the real device.** Traced to
+`CountdownRedirect`'s auto-redirect (`ReferralLanding.tsx`): it fires
+`redirectToStore` — and therefore `writeClipboardReferral` — from a
+`setTimeout` callback, with no user gesture behind it. Safari's
+`navigator.clipboard.writeText()` requires a real, gesture-backed call
+stack; without one it rejects. `writeClipboardReferral`'s
+try/catch swallows that (deliberately — clipboard failures are meant to
+fail soft, see its own doc comment), so nothing visibly breaks on the web
+side and the App Store still opens on schedule, but nothing ever lands on
+the clipboard. The button correctly showing inactive on the phone is the
+control correctly reporting "there's genuinely nothing pasteable here" —
+not a bug in the button. The bug is that the *only* path guaranteed to
+reach the clipboard (a direct tap on the CTA button, preserving the
+gesture) is optional — most real users just wait for the 3-second
+countdown, which can never carry the payload on real Safari, no matter
+what the code does. This is a hard OS restriction, not something
+fixable in our code — a decision on how to handle it (skip the passive
+countdown for iOS specifically? nudge users toward tapping?) is still
+open.
+
+**2. On the simulator, the button shows active but a tap pastes
+nothing.** Separate cause, an API ceiling rather than a bug:
+`UIPasteConfiguration(forAccepting: String.self)` enables the control for
+*any* string on the pasteboard, not specifically a valid
+`sparkle_ref:v1:` payload — Apple gives no way to gate paste-eligibility
+on content, only on type. The simulator shares the Mac's general
+pasteboard, so unrelated leftover text (including from prior
+`simctl pbcopy` testing) makes the control look tappable. Tapping it
+correctly finds no valid payload (`parseClipboardReferralPayload` returns
+`null`) and `onCode` silently never fires — no error, nothing visible.
+Not fixable at the OS-API level; worth considering surfacing an
+"invalid paste" signal to the app instead of pure silence, as a UX
+improvement.
+
+**Investigating a third, related report ("fingerprint fallback didn't
+happen") turned up a real observability gap, not a logic bug.** There is
+no explicit "try clipboard, fall back to fingerprint on failure" trigger
+in the code — the two are fully independent. `recover()` runs
+fingerprint matching automatically and unconditionally on launch;
+`applyClipboardCode()` only touches state when the clipboard tap actually
+yields a valid payload (confirmed above it usually doesn't, on a real
+device, unless the CTA was tapped directly). So a failed clipboard read
+is a pure no-op — it can't overwrite or block a fingerprint result. That
+means when nothing shows up, the automatic fingerprint match itself
+returned no match — and every real click from this test session actually
+confirms that independently: `referral_clicks.matched` was `false` for
+every row, and `referral_conversions` was empty entirely, for a full day
+of real-device testing.
+
+*Why fingerprint matching itself failed is not something this
+investigation could pin down.* Both backends swallow `/match` failures
+into a plain `{ matched: false }` — a genuine scoring miss (IP changed
+between click and install, say) is indistinguishable from a client-side
+network/config error, and neither is logged anywhere server-side. Traced
+the scoring algorithm itself (`fingerprintMatcher.ts`) end-to-end against
+the actual stored click row for this test and found no bug in it — UA
+parsing, device-model matching, and recency decay all check out correctly
+against real values. The most likely explanation is an ordinary IP
+mismatch (real-world network switch between browser click and app
+install) compounding with something else, but this can't be confirmed
+without either request logs or a reproduction with real visibility.
+**Proposed follow-up, not yet built:** log match attempts (including
+failed ones, with their computed score) server-side, since right now a
+genuine integration bug and a genuine low-confidence miss are
+indistinguishable from outside the request.
+
+---
+
+## 16. Default iOS store URL has no region code — likely cause of the "may not be available in your language" App Store prompt
+
+**Problem.** `getStoreUrl()`'s default iOS fallback
+(`packages/referral-web/src/utils/storeUrls.ts`) composes
+`https://apps.apple.com/app/id${config.iosAppId}` — no country/region
+segment. Apple's canonical App Store URL shape includes one
+(`https://apps.apple.com/<country>/app/<slug>/id<id>`); a bare
+`/app/id<id>` link relies on the App Store client to resolve the correct
+regional storefront itself, and in practice this is the kind of link most
+likely to trigger the "This app may not be available in your language"
+interstitial the real-device test hit — reported right after tapping
+through from our redirect to the App Store's own download button.
+
+**Fix, not yet applied to Sparkle's own config.** `ReferralConfig`
+already supports `iosStoreUrl` as a full override specifically for this
+kind of case (`types.ts`) — set it to the real, regioned listing URL
+(e.g. `https://apps.apple.com/ng/app/sparkle/id<APPID>`) instead of
+relying on the bare `iosAppId`-only fallback. Not something the SDK's
+default should hardcode a region for — a general-purpose default has no
+correct single country to assume — so this is a per-project config fix,
+not an SDK code fix.

@@ -1,7 +1,7 @@
 import { and, desc, eq, gte } from 'drizzle-orm';
 import type { ReferralConfig } from '../config.js';
 import type { Db } from '../db/client.js';
-import { referralClicks } from '../db/schema.js';
+import { referralClicks, referralMatchAttempts } from '../db/schema.js';
 import { parseModel, parseUa, type UaSignature } from '../support/userAgentParser.js';
 
 /** A stored click row, as read back from the DB (only the columns scoring needs). */
@@ -25,6 +25,13 @@ export interface IncomingFingerprint {
   screenHeight?: number | null;
   timezone?: string | null;
   language?: string | null;
+  /**
+   * Only used for `referral_match_attempts` logging (see #15 in
+   * decisions.md) — not part of scoring itself. Optional so `score()`'s
+   * existing unit tests (which build an IncomingFingerprint without one)
+   * keep working untouched; `match()` treats a missing one as "unknown".
+   */
+  deviceId?: string;
 }
 
 export interface MatchResult {
@@ -162,13 +169,55 @@ export class FingerprintMatcher {
       }
     }
 
-    if (!best || bestScore < this.config.minConfidence) return null;
+    const matched = best !== null && bestScore >= this.config.minConfidence;
+    await this.logAttempt(incoming, {
+      matched,
+      candidateCount: rows.length,
+      bestScore: rows.length > 0 ? bestScore : null,
+      bestClickId: best?.clickId ?? null,
+    });
+
+    if (!matched) return null;
 
     return {
-      clickId: best.clickId,
-      referralCode: best.referralCode,
+      // best is non-null here — matched only becomes true when it is.
+      clickId: best!.clickId,
+      referralCode: best!.referralCode,
       confidence: Math.round(bestScore * 100) / 100,
     };
+  }
+
+  /**
+   * Logs every /match attempt, success or failure — see #15 in
+   * decisions.md for why: a genuine low-confidence miss and a client
+   * config/network error were otherwise indistinguishable from outside
+   * the request. Best-effort and isolated deliberately — a logging
+   * failure must never turn a real match (or a real non-match) into a
+   * 500, so failures here are swallowed, not thrown.
+   */
+  private async logAttempt(
+    incoming: IncomingFingerprint,
+    outcome: { matched: boolean; candidateCount: number; bestScore: number | null; bestClickId: string | null },
+  ): Promise<void> {
+    try {
+      await this.db.insert(referralMatchAttempts).values({
+        deviceId: incoming.deviceId ?? 'unknown',
+        platform: incoming.platform ?? 'unknown',
+        ipAddress: incoming.ip,
+        userAgent: incoming.userAgent ?? null,
+        deviceModel: incoming.deviceModel ?? null,
+        screenWidth: incoming.screenWidth ?? null,
+        screenHeight: incoming.screenHeight ?? null,
+        timezone: incoming.timezone ?? null,
+        language: incoming.language ?? null,
+        matched: outcome.matched,
+        candidateCount: outcome.candidateCount,
+        bestScore: outcome.bestScore,
+        bestClickId: outcome.bestClickId,
+      });
+    } catch (err) {
+      console.warn('Failed to log match attempt (non-fatal):', err);
+    }
   }
 
   private incomingSignature(incoming: IncomingFingerprint): UaSignature {

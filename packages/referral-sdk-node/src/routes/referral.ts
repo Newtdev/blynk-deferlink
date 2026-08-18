@@ -121,6 +121,7 @@ export function referralRouter(db: Db, config: ReferralConfig): Router {
         screenHeight: fingerprint.screen_height,
         timezone: fingerprint.timezone,
         language: fingerprint.language,
+        deviceId: device_id,
       });
       if (!result) {
         return res.json({ matched: false, referral_code: null });
