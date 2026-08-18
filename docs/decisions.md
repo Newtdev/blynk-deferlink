@@ -616,3 +616,32 @@ vercel --prod --yes --archive=tgz
 Deploying from inside `examples/web` will silently go back to the old,
 broken, subtree-only behavior — the root directory setting only helps
 once the *whole* tree is actually uploaded for Vercel to find it in.
+
+---
+
+## 18. Countdown vs. tap for the iOS clipboard tier — Decided
+
+**Problem, left open in #15.** `writeClipboardReferral` can only succeed
+from a real user gesture (Safari rejects a gesture-less
+`navigator.clipboard.writeText()`). `CountdownRedirect`'s passive
+auto-redirect has no gesture behind it, so it can never carry the
+clipboard payload — only a direct tap on the CTA button can. Two ways to
+resolve the tension: drop the passive auto-redirect for iOS entirely (force
+the tap), or keep both and bias toward the tap.
+
+**Decision: keep both, bias toward the tap.** A user who lets the
+countdown auto-redirect them isn't stuck — fingerprint matching already
+runs unconditionally on the app side regardless of how the redirect
+happened, so they still get recovery, just the probabilistic tier instead
+of the deterministic one. Forcing every iOS user to tap something to
+proceed at all was judged worse than occasionally landing someone on
+weaker matching.
+
+**Implementation.** `ReferralLanding`'s `countdownSeconds` default raised
+from 3 to 8. Not a logic change — the auto-redirect still fires the exact
+same `redirectToStore` (and therefore still tries and fails the clipboard
+write, same as before) — purely a UX nudge: a short countdown reads as
+"this is about to happen automatically, no need to touch anything," a
+longer one gives the CTA button time to actually be noticed and tapped
+before the passive path takes over. Consuming apps can still override
+`countdownSeconds` explicitly if 8s doesn't fit their landing page.
