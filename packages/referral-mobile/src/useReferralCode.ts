@@ -3,12 +3,19 @@ import { useReferralContext } from './ReferralProvider';
 import type { ClaimResult, MatchMethod, ReferralResult } from './types';
 
 /**
- * Recovers the referral code on first launch and exposes it to the signup flow.
- * Recovery runs exactly once per install; mounting this hook on multiple
- * screens is safe (cached in memory for the session, not re-run). The code
- * itself isn't persisted by the SDK past this session — see ReferralConfig's
- * storageAdapter doc and ReferralResult.claim if the app needs to claim it
- * later instead of immediately.
+ * Recovers the referral code and exposes it to the signup flow. Runs once
+ * per mount, cached in memory for the rest of the session — mounting this
+ * hook on multiple screens within the same session is safe and free, but
+ * nothing persists to disk, so a fresh app launch always runs recovery
+ * again from scratch.
+ *
+ * That means WHERE this is mounted matters: put it on a one-time
+ * signup/onboarding screen, not an always-on root component. `/match` is
+ * rate-limited per device (default 5/day) — calling this unconditionally
+ * on every app launch will burn through that budget on routine opens. See
+ * ReferralResult.claim if the app needs to claim a recovered code in a
+ * later session instead of immediately (the SDK won't remember it either
+ * way — the app has to).
  */
 export function useReferralCode(): ReferralResult {
   const { service } = useReferralContext();

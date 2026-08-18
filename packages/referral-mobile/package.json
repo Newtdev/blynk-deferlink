@@ -27,13 +27,7 @@
     "react": ">=17",
     "react-native": ">=0.68",
     "react-native-device-info": ">=10.0.0",
-    "@react-native-async-storage/async-storage": ">=1.17.0",
     "react-native-play-install-referrer": ">=1.1.0"
-  },
-  "peerDependenciesMeta": {
-    "@react-native-async-storage/async-storage": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@types/react": "^18.2.0",

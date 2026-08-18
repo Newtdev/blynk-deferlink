@@ -268,7 +268,7 @@ implementation and the live deployment.
 
 ---
 
-## 8. Client-side storage scope — Decided
+## 8. Client-side storage scope — Superseded by #19
 
 **Problem.** Should the mobile SDK keep owning local persistence
 (currently: AsyncStorage by default, `storageAdapter` as an opt-in
@@ -284,8 +284,8 @@ times in a day would exhaust that budget on routine opens alone —
 possibly before a legitimate match ever got the chance to run. This isn't
 a hypothetical edge case; it's the default configuration.
 
-**Decision.** Split what "storage" was doing into two separate concerns
-that don't need to travel together:
+**Decision (original).** Split what "storage" was doing into two separate
+concerns that don't need to travel together:
 - **Idempotency guard** ("has this install already attempted recovery?")
   — stays, because of the rate-limit interaction above. Doesn't need to
   be much: a boolean-ish "attempted" flag, not the full stored
@@ -300,6 +300,14 @@ that don't need to travel together:
 Net effect: much smaller SDK-internal storage footprint, no duplicated
 state between the SDK and the app's own store, and the rate-limit hazard
 that would come from removing the guard entirely is avoided.
+
+**Superseded, see #19.** The idempotency guard this entry kept was later
+removed too — not because the rate-limit risk it protected against was
+wrong, but because the actual integration pattern (recovery scoped to a
+one-time signup screen, not an always-on root component) makes it
+unnecessary in practice, and the SDK shouldn't force a dependency on
+every adopter to guard against a risk that only applies to a different
+mounting choice.
 
 ---
 
@@ -681,3 +689,47 @@ regardless of what it was changed to. Caught because the live site still
 showed a 3s countdown after deploying the 8s default. Removed the
 override rather than bumping it to `{8}`, so the demo stays in sync with
 the SDK default automatically if it changes again.
+
+---
+
+## 19. Mobile SDK drops persistent storage entirely — Done
+
+**Problem, revisited from #8.** #8 kept a minimal client-side
+"already attempted recovery" flag, persisted via AsyncStorage by
+default, specifically to avoid burning through `/match`'s per-device
+rate limit (5/day) if `recover()` ran on every app launch.
+
+**Pushback, and it holds up.** That risk is real only if `recover()` is
+actually called on every launch — which depends entirely on *where* a
+consuming app mounts `useReferralCode()`. Sparkle's (and this SDK's
+intended) integration pattern mounts it on a one-time signup screen, not
+an always-on root component — a given install visits that screen once
+(maybe a handful of times if signup is abandoned and retried), nowhere
+near 5 times in a routine day of normal app use unrelated to signup. On
+top of that, the flag was never providing duplicate-*signup* protection
+in the first place — that's `referral_conversions`' unique `device_id`
+index, entirely server-side, unaffected by anything on the client.
+
+**Decision.** Remove client-side persistence entirely — no AsyncStorage
+dependency (required, optional, or otherwise), no `storageAdapter`
+config, no idempotency flag. `recover()`'s result now lives in memory
+only (`ReferralService.lastRecovery`), for the current session; a fresh
+app launch always re-runs recovery. The rate-limit risk #8 was guarding
+against doesn't disappear — it's now squarely the consuming app's
+responsibility if their mount point can't naturally guarantee "once per
+install," same as it always should have been for an app that mounts this
+somewhere other than a one-time flow. Documented loudly in the README's
+"Storage" section rather than silently dropped, since this SDK is meant
+to be adopted beyond Sparkle, where that assumption won't always hold.
+
+**Implementation.** `storage.ts` deleted outright.
+`ReferralStorageAdapter`/`ReferralStorage`/`storageAdapter` removed from
+`types.ts` and the package's exports. `ReferralService.reset()` is
+synchronous now (no `await`, was clearing a persisted flag before,
+now just the in-memory cache — existing `await service.reset()` call
+sites still work, `await` on a non-Promise is a no-op).
+`@react-native-async-storage/async-storage` removed from
+`peerDependencies`/`peerDependenciesMeta` entirely, and from
+`examples/mobile/package.json`. All 9 existing tests and both packages'
+typechecks pass unchanged — nothing tested the removed persistence layer
+directly.
