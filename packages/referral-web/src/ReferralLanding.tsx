@@ -16,6 +16,13 @@ export interface ReferralLandingProps {
   title?: string;
   subtitle?: string;
   ctaText?: string;
+  /**
+   * Overrides the default for BOTH platforms uniformly. Left unset, iOS
+   * defaults to 8s (biases toward tapping the CTA, since only a direct
+   * gesture can carry the clipboard payload) and Android defaults to 3s
+   * (auto-redirect is fully deterministic there either way, no reason to
+   * wait longer) — see docs/decisions.md #20.
+   */
   countdownSeconds?: number;
   theme?: ReferralTheme;
   /** Fires when the app appears to have opened via the custom scheme. */
@@ -56,20 +63,25 @@ export function ReferralLanding({
   title = "You've been invited",
   subtitle,
   ctaText,
-  // Deliberately longer than a typical "redirecting…" countdown: tapping
-  // the CTA directly is the only path that can carry the clipboard payload
-  // (writeClipboardReferral needs a real user gesture — see
-  // docs/decisions.md #15/#18). A longer window biases users toward
-  // noticing and tapping the button instead of just waiting it out; the
-  // passive auto-redirect still works fine either way, just falls back to
-  // fingerprint-only matching on the app side, same as it always has.
-  countdownSeconds = 8,
+  countdownSeconds,
   theme,
   onAppOpen,
   onRedirect,
 }: ReferralLandingProps) {
   const config = useReferralConfig();
   const { platform, isInAppBrowser } = usePlatformDetect();
+  // Platform-specific default, not a flat one — see docs/decisions.md #20.
+  // iOS: deliberately longer than a typical "redirecting…" countdown,
+  // because tapping the CTA directly is the only path that can carry the
+  // clipboard payload (writeClipboardReferral needs a real user gesture —
+  // #15/#18). A longer window biases users toward noticing and tapping
+  // instead of just waiting it out.
+  // Android: recovers deterministically via the Play Store referrer param
+  // regardless of tap vs. auto-redirect (writeClipboardReferral never
+  // even runs here) — there's no reason to bias toward a tap, so this
+  // stays at a normal, fast countdown instead of inheriting iOS's.
+  // Pass countdownSeconds explicitly to override either platform's default.
+  const effectiveCountdownSeconds = countdownSeconds ?? (platform === 'ios' ? 8 : 3);
   useReferralClick(referralCode); // fire-and-forget click registration
   const styleVars = useInjectedStyles(theme);
 
@@ -136,7 +148,7 @@ export function ReferralLanding({
             {!isInAppBrowser && (
               <p className="rf-countdown">
                 <CountdownRedirect
-                  seconds={countdownSeconds}
+                  seconds={effectiveCountdownSeconds}
                   onComplete={redirectToStore}
                 />
               </p>
