@@ -733,3 +733,31 @@ sites still work, `await` on a non-Promise is a no-op).
 `examples/mobile/package.json`. All 9 existing tests and both packages'
 typechecks pass unchanged — nothing tested the removed persistence layer
 directly.
+
+---
+
+## 20. Countdown default made platform-aware — Done
+
+**Problem, found reviewing #18 for Android.** #18 raised
+`ReferralLanding`'s countdown default from 3s to 8s, reasoning
+specifically about iOS: only a direct tap on the CTA preserves the user
+gesture `writeClipboardReferral` needs, so a longer countdown biases
+users toward tapping instead of passively waiting. But `CountdownRedirect`
+renders unconditionally for any mobile platform
+(`isMobile = platform !== 'desktop'`), so Android inherited the same 8s
+wait — for no reason. Android's entire deterministic mechanism is the
+Play Store `referrer` param `getStoreUrl()` embeds; `writeClipboardReferral`
+is explicitly gated `if (platform === 'ios')` and never runs for Android
+at all. A tap and the passive auto-redirect produce an identical,
+fully-deterministic outcome there — the countdown length is pure UX
+friction with zero recovery-quality tradeoff either way.
+
+**Fix.** `countdownSeconds`' default is now computed per-platform inside
+`ReferralLanding` instead of a single flat default:
+`countdownSeconds ?? (platform === 'ios' ? 8 : 3)`. iOS keeps the 8s
+bias-toward-tap reasoning from #18 unchanged; Android reverts to the
+original fast 3s, since nothing about its determinism depends on how the
+user reached the store link. The prop is still a single
+`countdownSeconds?: number` — an explicit value overrides both platforms
+uniformly, same escape hatch as before, just not the implicit default
+anymore.
