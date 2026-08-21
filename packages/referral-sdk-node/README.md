@@ -111,10 +111,23 @@ cd packages/referral-sdk-node
 vercel link                # first time: creates/links a Vercel project
 vercel env add DATABASE_URL production        # paste your Neon connection string
 vercel env add CLICK_TOKEN_SECRET production  # `openssl rand -hex 32` — required, not optional
+vercel env add TRUST_PROXY_HOPS production    # 1 — see the callout below, this one matters
 vercel env add CRON_SECRET production         # any random string, for /cleanup
 vercel env add ANALYTICS_SECRET production    # any random string, for /analytics
 vercel deploy --prod
 ```
+
+**`TRUST_PROXY_HOPS` defaults to `0` (trust nothing) — set it to `1` on
+Vercel specifically**, or `clientIp()` falls back to Vercel's own edge IP
+for every request instead of the real client's, silently degrading
+IP-match scoring and per-IP rate limiting (not a security hole either way
+— `0` is the safe default — just wrong for this specific deploy target
+until set). This isn't a guess: it replaced a real bug
+(`app.set('trust proxy', true)`, which trusted *every* hop including a
+client's own spoofed `X-Forwarded-For`) — see
+[docs/decisions.md #23](../../docs/decisions.md). Self-hosted (Render,
+Fly, bare Node, local dev) needs whatever its actual proxy chain's hop
+count is, or `0` behind no proxy at all.
 
 Vercel auto-detects `api/index.ts` and deploys it as a Node serverless
 function; `vercel.json`'s rewrite sends every request there. The daily
@@ -139,10 +152,20 @@ Defaults match `sparkle/referral-sdk` (PHP) — see
 | `REFERRAL_RATE_LIMIT_CLICKS_PER_HOUR` | `10` | Per-IP click throttle |
 | `REFERRAL_RATE_LIMIT_MATCHES_PER_DAY` | `5` | Per-device match throttle |
 | `REFERRAL_RATE_LIMIT_CLAIMS_PER_HOUR` | `10` | Per-device claim throttle |
-| `REFERRAL_HASH_DEVICE_IDS` | `true` | SHA-256 device IDs before storing (one-way, dedup only) |
+| `REFERRAL_HASH_DEVICE_IDS` | `true` | SHA-256 device IDs before storing (one-way, dedup only) — also applied to `referral_match_attempts` logging now, which stored them raw before |
 | `REFERRAL_REWARDS_ENABLED` | `true` | Whether `/claim` distributes a reward |
 | `REFERRAL_REFERRER_REWARD` / `REFERRAL_REFEREE_REWARD` | `500` | Reward amounts |
 | `REFERRAL_REWARD_TYPE` | `credit` | `credit` \| `points` \| `custom` |
+| `REFERRAL_RETENTION_DAYS` | `30` | How long `/cleanup` keeps `referral_match_attempts`/`referral_rate_limit_hits` rows before purging — both grew unbounded forever before this |
+| `TRUST_PROXY_HOPS` | `0` | Reverse-proxy hop count to trust for `clientIp()` — see the deploy section above, **not** part of `ReferralConfig` (operational/deploy-topology concern, like `CRON_SECRET`) |
+
+**If `on_claim_callback` throws** (e.g. your own account-crediting call is
+down), the claim itself still succeeds — the conversion row is real and
+final regardless — but `referral_conversions.reward_status` gets set to
+`'failed'` instead of the default `'granted'`, and the failure is logged.
+Query for `reward_status = 'failed'` periodically if you want to catch and
+manually reconcile these; there's no built-in retry. See
+[docs/decisions.md #23](../../docs/decisions.md).
 
 Two things **can't** come from env vars, because they're functions, not
 values — if you need either, don't use the shipped entrypoints; call

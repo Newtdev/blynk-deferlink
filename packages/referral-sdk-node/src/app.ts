@@ -19,9 +19,16 @@ export function createApp(configInput: ReferralConfigInput = {}): Express {
 
   const app = express();
 
-  // Requests arrive via Vercel's (or any) reverse proxy — trust its
-  // X-Forwarded-For so rate limiting and click IPs reflect the real client.
-  app.set('trust proxy', true);
+  // How many reverse-proxy hops in front of this process to trust — NOT
+  // `true` (trusts every hop, which means the client's own X-Forwarded-For
+  // header is trusted too, letting them spoof clientIp() and defeat
+  // per-IP rate limiting / IP-match scoring). Vercel is exactly one hop
+  // (its edge), so TRUST_PROXY_HOPS=1 is correct there. Self-hosted
+  // (Render/Fly/bare Node/local dev) needs whatever its real proxy chain's
+  // hop count is — 0 (the safe default) if there's no proxy in front at
+  // all. See decisions.md #23 and the README's deployment section.
+  const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 0);
+  app.set('trust proxy', Number.isFinite(trustProxyHops) ? trustProxyHops : 0);
 
   app.use(cors());
   app.use(express.json({ limit: '64kb' }));

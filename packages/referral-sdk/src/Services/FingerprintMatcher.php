@@ -245,7 +245,14 @@ final class FingerprintMatcher
         if ($a === '' || $b === '') {
             return false;
         }
-        $primary = static fn (string $l): string => strtolower(explode('-', $l)[0]);
+        // Browsers/Intl report BCP-47 hyphenated tags ("en-NG"); native iOS
+        // APIs report underscore-separated ICU tags ("en_US", or
+        // "en_US_POSIX" on the Simulator specifically) — split on either so
+        // both reduce to "en". This backend previously split only on '-',
+        // silently failing to match against the Node backend's own
+        // behavior for the exact same underscore-separated input — a real,
+        // live cross-backend divergence caught in decisions.md #23.
+        $primary = static fn (string $l): string => strtolower(preg_split('/[-_]/', $l)[0]);
 
         return $primary($a) === $primary($b);
     }

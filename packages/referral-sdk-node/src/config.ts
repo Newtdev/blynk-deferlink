@@ -40,6 +40,16 @@ export interface ReferralConfigInput {
   /** Previously unthrottled — see decisions.md #21. */
   rate_limit_claims_per_hour?: number;
   hash_device_ids?: boolean;
+  /**
+   * How long `/cleanup` keeps historical rows in `referral_match_attempts`
+   * and `referral_rate_limit_hits` before purging them — both grew
+   * unbounded forever before this. Unlike `referral_clicks` (pruned by
+   * `matched`/`expires_at`, since an unmatched expired click has no
+   * further use), these two are pure logs with no functional role once
+   * they're old — no operational reason to keep them past a reasonable
+   * debugging/audit window. See decisions.md #23.
+   */
+  retention_days?: number;
   scoring?: Partial<ScoringWeights>;
   rewards?: Partial<RewardsConfig>;
   /**
@@ -57,6 +67,7 @@ export class ReferralConfig {
   readonly rateLimitMatchesPerDay: number;
   readonly rateLimitClaimsPerHour: number;
   readonly hashDeviceIds: boolean;
+  readonly retentionDays: number;
   readonly scoring: ScoringWeights;
   readonly rewards: RewardsConfig;
   readonly codeValidator?: (code: string) => boolean | Promise<boolean>;
@@ -68,6 +79,7 @@ export class ReferralConfig {
     this.rateLimitMatchesPerDay = c.rate_limit_matches_per_day ?? 5;
     this.rateLimitClaimsPerHour = c.rate_limit_claims_per_hour ?? 10;
     this.hashDeviceIds = c.hash_device_ids ?? true;
+    this.retentionDays = c.retention_days ?? 30;
 
     this.scoring = {
       // Lowered from 40 now that recency picks up the slack — a network

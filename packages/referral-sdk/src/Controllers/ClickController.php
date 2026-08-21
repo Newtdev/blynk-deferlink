@@ -33,7 +33,9 @@ class ClickController
             'fingerprint.screen_height'  => ['nullable', 'integer'],
             'fingerprint.pixel_ratio'    => ['nullable', 'numeric'],
             'fingerprint.timezone'       => ['nullable', 'string', 'max:100'],
-            'fingerprint.language'       => ['nullable', 'string', 'max:10'],
+            // 35, not 10: real device locale identifiers run longer than a
+            // bare BCP-47 primary tag — see decisions.md #23.
+            'fingerprint.language'       => ['nullable', 'string', 'max:35'],
             'fingerprint.platform'       => ['nullable', 'string', 'max:50'],
             'fingerprint.referrer'       => ['nullable', 'string'],
         ]);

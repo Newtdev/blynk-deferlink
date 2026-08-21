@@ -159,6 +159,29 @@ Everything is set in `config/referral.php`. Key hooks:
 - **`scoring`** — per-signal weights. **`min_confidence`** — match threshold.
 - **`hash_device_ids`** — SHA-256 device IDs before storage (dedup only).
 
+**`$request->ip()`'s safety is entirely your app's responsibility.**
+`ClickController`/`MatchController` use Laravel's own `$request->ip()`
+rather than reading `X-Forwarded-For` directly, but that's only safe if
+*your* Laravel app's `TrustProxies` middleware is configured for your
+actual proxy topology — with nothing configured, Laravel trusts no
+proxies, and if you're behind one, `$request->ip()` returns the proxy's
+IP, not the real client's. This package can't configure your app's
+middleware stack for you; see
+[Laravel's TrustProxies docs](https://laravel.com/docs/requests#configuring-trusted-proxies)
+before relying on this for anything IP-sensitive. See
+[docs/decisions.md #23](../../docs/decisions.md) — this was the Node
+backend's actual vulnerability (it hand-parsed the header itself,
+trusting the client-suppliable leftmost entry); PHP was never exploitable
+the same way, but the safety was — and still is — conditional, not
+automatic.
+
+**If `on_claim_callback` throws**, the claim itself still succeeds — the
+conversion row is real and final regardless — but
+`referral_conversions.reward_status` gets set to `'failed'` instead of
+the default `'granted'`, and the failure is logged via `error_log`. Query
+for `reward_status = 'failed'` periodically to catch and manually
+reconcile these; there's no built-in retry.
+
 ---
 
 ## Privacy & anti-fraud
@@ -169,8 +192,9 @@ Everything is set in `config/referral.php`. Key hooks:
 - `POST /click` is throttled per IP/hour; `POST /match` and `POST /claim`
   per device/hour (`/match` per device/day).
 - Each click locks to one device on match — atomically, so two concurrent
-  matches can't both win the same click — and `/claim` verifies that exact
-  lock (click_id + device_id + referral_code) before paying out anything.
+  matches can't both win the same click — and `/claim` verifies a signed
+  token proving that exact lock before paying out anything (see
+  [docs/decisions.md #21/#22](../../docs/decisions.md)).
   Each device converts once, ever.
 
 ---

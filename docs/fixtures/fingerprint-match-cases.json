@@ -1,0 +1,163 @@
+[
+  {
+    "name": "perfect match scores 100",
+    "stored": {
+      "ip_address": "102.89.1.1",
+      "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15",
+      "screen_width": 390,
+      "screen_height": 844,
+      "timezone": "Africa/Lagos",
+      "language": "en-NG",
+      "created_at": "2026-08-14T12:00:00Z"
+    },
+    "incoming": {
+      "ip": "102.89.1.1",
+      "device_model": "iPhone14,5",
+      "platform": "ios",
+      "screen_width": 390,
+      "screen_height": 844,
+      "timezone": "Africa/Lagos",
+      "language": "en-NG"
+    },
+    "now": "2026-08-14T12:00:00Z",
+    "expected_score": 100
+  },
+  {
+    "name": "IP alone, even fresh, must not clear the match threshold on its own",
+    "stored": {
+      "ip_address": "102.89.1.1",
+      "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15",
+      "screen_width": 390,
+      "screen_height": 844,
+      "timezone": "Africa/Lagos",
+      "language": "en-NG",
+      "created_at": "2026-08-14T12:00:00Z"
+    },
+    "incoming": {
+      "ip": "102.89.1.1",
+      "device_model": "Pixel 7",
+      "platform": "android",
+      "screen_width": 1080,
+      "screen_height": 2400,
+      "timezone": "America/New_York",
+      "language": "fr-FR"
+    },
+    "now": "2026-08-14T12:00:00Z",
+    "expected_score": 40
+  },
+  {
+    "name": "IP change no longer fails a fresh match on its own (network switch)",
+    "stored": {
+      "ip_address": "102.89.1.1",
+      "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15",
+      "screen_width": 390,
+      "screen_height": 844,
+      "timezone": "Africa/Lagos",
+      "language": "en-NG",
+      "created_at": "2026-08-14T12:00:00Z"
+    },
+    "incoming": {
+      "ip": "197.210.9.9",
+      "device_model": "iPhone14,5",
+      "platform": "ios",
+      "screen_width": 390,
+      "screen_height": 844,
+      "timezone": "Africa/Lagos",
+      "language": "en-NG"
+    },
+    "now": "2026-08-14T12:00:00Z",
+    "expected_score": 75
+  },
+  {
+    "name": "underscore-separated locale matches hyphenated (iOS Simulator reports en_US_POSIX) — the exact PHP/Node split-divergence bug",
+    "stored": {
+      "ip_address": "102.89.1.1",
+      "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15",
+      "screen_width": 390,
+      "screen_height": 844,
+      "timezone": "Africa/Lagos",
+      "language": "en-NG",
+      "created_at": "2026-08-14T12:00:00Z"
+    },
+    "incoming": {
+      "ip": "102.89.1.1",
+      "device_model": "iPhone14,5",
+      "platform": "ios",
+      "screen_width": 390,
+      "screen_height": 844,
+      "timezone": "Africa/Lagos",
+      "language": "en_US_POSIX"
+    },
+    "now": "2026-08-14T12:00:00Z",
+    "expected_score": 100
+  },
+  {
+    "name": "screen orientation is ignored (width/height swapped)",
+    "stored": {
+      "ip_address": "102.89.1.1",
+      "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15",
+      "screen_width": 390,
+      "screen_height": 844,
+      "timezone": "Africa/Lagos",
+      "language": "en-NG",
+      "created_at": "2026-08-14T12:00:00Z"
+    },
+    "incoming": {
+      "ip": "102.89.1.1",
+      "device_model": "iPhone14,5",
+      "platform": "ios",
+      "screen_width": 844,
+      "screen_height": 390,
+      "timezone": "Africa/Lagos",
+      "language": "en-NG"
+    },
+    "now": "2026-08-14T12:00:00Z",
+    "expected_score": 100
+  },
+  {
+    "name": "android model matches by OS family",
+    "stored": {
+      "ip_address": "10.0.0.1",
+      "user_agent": "Mozilla/5.0 (Linux; Android 14; Pixel 7 Build/AP1A) AppleWebKit/537.36",
+      "screen_width": 412,
+      "screen_height": 915,
+      "timezone": "Africa/Lagos",
+      "language": "en",
+      "created_at": "2026-08-14T12:00:00Z"
+    },
+    "incoming": {
+      "ip": "10.0.0.1",
+      "device_model": "Pixel 7",
+      "platform": "android",
+      "screen_width": 412,
+      "screen_height": 915,
+      "timezone": "Africa/Lagos",
+      "language": "en"
+    },
+    "now": "2026-08-14T12:00:00Z",
+    "expected_score": 100
+  },
+  {
+    "name": "recency decays to exactly half its weight at the midpoint of a 48h window",
+    "stored": {
+      "ip_address": "0.0.0.0",
+      "user_agent": "totally-unmatched-user-agent",
+      "screen_width": 1,
+      "screen_height": 1,
+      "timezone": "nowhere",
+      "language": "zz",
+      "created_at": "2026-08-14T12:00:00Z"
+    },
+    "incoming": {
+      "ip": "9.9.9.9",
+      "device_model": "Pixel 7",
+      "platform": "android",
+      "screen_width": 2,
+      "screen_height": 2,
+      "timezone": "elsewhere",
+      "language": "yy"
+    },
+    "now": "2026-08-15T12:00:00Z",
+    "expected_score": 7.5
+  }
+]

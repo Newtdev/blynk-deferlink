@@ -7,6 +7,7 @@ namespace Sparkle\Referral\Services;
 use PDO;
 use RuntimeException;
 use Sparkle\Referral\Support\ClickToken;
+use Sparkle\Referral\Support\DeviceId;
 use Sparkle\Referral\Support\ReferralConfig;
 
 /**
@@ -127,7 +128,7 @@ final class ConversionTracker
             throw $e;
         }
 
-        $reward = $this->distributeReward($click['referral_code'], $userId);
+        $reward = $this->distributeReward($verified['click_id'], $click['referral_code'], $userId);
 
         return ['success' => true, 'reward' => $reward];
     }
@@ -142,8 +143,22 @@ final class ConversionTracker
         return $stmt->fetchColumn() !== false;
     }
 
-    /** @return array<string,mixed> */
-    private function distributeReward(string $referralCode, ?string $userId): array
+    /**
+     * The conversion row is already committed by the time this runs (it
+     * has to be — the dedup/unique-device guarantee needs to land before
+     * crediting anything). So a failing callback (e.g. Sparkle's own
+     * account-crediting call is down) must not throw past that: it used
+     * to, leaving a device permanently marked "converted" with no reward
+     * and the client staring at a misleading 500. Caught here instead —
+     * logged, the row marked `reward_status = 'failed'` (defaults to
+     * `'granted'` optimistically on insert) for reconciliation, and
+     * claim() still reports success, because the conversion itself — "this
+     * device used this code, once" — is real and final regardless of
+     * whether the reward side effect landed. See decisions.md #23.
+     *
+     * @return array<string,mixed>
+     */
+    private function distributeReward(string $clickId, string $referralCode, ?string $userId): array
     {
         $reward = [
             'type'   => $this->config->rewards['reward_type'],
@@ -157,33 +172,37 @@ final class ConversionTracker
         // Optional project-supplied callback for actually crediting accounts.
         // Signature: (string $referralCode, ?string $userId, array $config): void
         $callback = $this->config->rewards['on_claim_callback'] ?? null;
-        if (is_string($callback) && class_exists($callback) && method_exists($callback, 'handle')) {
-            (new $callback())->handle($referralCode, $userId, $this->config->rewards);
-        } elseif (is_callable($callback)) {
-            $callback($referralCode, $userId, $this->config->rewards);
+        try {
+            if (is_string($callback) && class_exists($callback) && method_exists($callback, 'handle')) {
+                (new $callback())->handle($referralCode, $userId, $this->config->rewards);
+            } elseif (is_callable($callback)) {
+                $callback($referralCode, $userId, $this->config->rewards);
+            }
+        } catch (\Throwable $e) {
+            error_log(
+                "on_claim_callback failed for click {$clickId} (code {$referralCode}) — conversion already " .
+                "recorded, reward not confirmed granted. Marked reward_status='failed' for reconciliation. " .
+                $e->getMessage()
+            );
+            $stmt = $this->pdo->prepare(
+                "UPDATE referral_conversions SET reward_status = 'failed' WHERE click_id = :click_id"
+            );
+            $stmt->execute([':click_id' => $clickId]);
         }
 
         return $reward;
     }
 
+    /** @deprecated Use Support\DeviceId::hash() directly. Kept so existing call sites don't break. */
     public static function hashDeviceId(string $deviceId): string
     {
-        // One-way, for dedup only. Never reversed.
-        return hash('sha256', $deviceId);
+        return DeviceId::hash($deviceId);
     }
 
-    /**
-     * Applies `hash_device_ids` consistently everywhere a device_id is
-     * persisted — `referral_clicks.matched_device_id` (see
-     * ClickStore::lockToDevice, called from MatchController) and
-     * `referral_conversions.device_id` (this class) both need to agree on
-     * the same stored form, or claim()'s lock-ownership check
-     * (`matched_device_id !== storedDeviceId`) compares a hash against a
-     * raw value and never matches.
-     */
+    /** @deprecated Use Support\DeviceId::resolve() directly. Kept so existing call sites don't break. */
     public static function resolveDeviceId(string $deviceId, ReferralConfig $config): string
     {
-        return $config->hashDeviceIds ? self::hashDeviceId($deviceId) : $deviceId;
+        return DeviceId::resolve($deviceId, $config);
     }
 
     private function isUniqueViolation(\PDOException $e): bool

@@ -75,6 +75,16 @@ export const referralConversions = pgTable(
     matchMethod: varchar('match_method', { length: 20 }).notNull(), // 'install_referrer' | 'fingerprint' | 'clipboard'
     matchConfidence: doublePrecision('match_confidence'),
     userId: varchar('user_id', { length: 255 }),
+    /**
+     * Optimistic default — set to 'failed' only if `on_claim_callback`
+     * throws (see ConversionTracker.distributeReward). The conversion
+     * itself is still recorded and `claim()` still reports success either
+     * way (the dedup guarantee is real regardless of whether the reward
+     * side effect landed) — this column exists so a failure is queryable
+     * for reconciliation instead of silently lost behind an unhandled
+     * exception. See decisions.md #23.
+     */
+    rewardStatus: varchar('reward_status', { length: 10 }).notNull().default('granted'), // 'granted' | 'failed'
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
