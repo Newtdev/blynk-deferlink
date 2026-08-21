@@ -8,8 +8,12 @@ iOS fingerprint matching), records conversions, and distributes rewards.
 - **First-class Laravel integration** — auto-discovered provider, publishable
   config + migrations, routes, throttling middleware, and a cleanup command.
 
-This is package 1 of 3. It pairs with `@sparkle/referral-web` (landing page)
-and `@sparkle/referral-mobile` (React Native recovery).
+This is one of two interchangeable backends — the other is
+[`@sparkle/referral-sdk-node`](../referral-sdk-node) (Node/Express + Postgres,
+same API contract, same matching algorithm) for projects that would rather
+not run PHP. Either pairs with `@sparkle/referral-web` (landing page) and
+`@sparkle/referral-mobile` (React Native recovery), which don't care which
+one is behind `apiEndpoint`.
 
 ---
 
