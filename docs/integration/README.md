@@ -32,6 +32,10 @@ share link  →  landing page stores a click (fingerprint)  →  user installs a
    →  code pre-fills signup  →  claim records the conversion + reward
 ```
 
+For the full picture — all four recovery paths (deterministic and
+probabilistic, on both platforms) and exactly how they converge on one
+backend and one claim — see [`recovery-flow.md`](recovery-flow.md).
+
 Each guide's own verification step confirms that piece works in
 isolation (a real `curl` round trip for the backends, a real click/recover/
 claim check for web/mobile) — you don't need all four wired together to
