@@ -82,7 +82,7 @@ export function ReferralLanding({
   // stays at a normal, fast countdown instead of inheriting iOS's.
   // Pass countdownSeconds explicitly to override either platform's default.
   const effectiveCountdownSeconds = countdownSeconds ?? (platform === 'ios' ? 8 : 3);
-  useReferralClick(referralCode); // fire-and-forget click registration
+  const { waitForClick } = useReferralClick(referralCode);
   const styleVars = useInjectedStyles(theme);
 
   const appOpened = useRef(false);
@@ -92,14 +92,22 @@ export function ReferralLanding({
     if (appOpened.current || redirected) return;
     setRedirected(true);
     onRedirect?.(platform);
+    // click_id backs the deterministic recovery channels (Android referrer
+    // param, iOS clipboard payload) — /claim now requires it, so both need
+    // this resolved before they're written. Resolves to null (never
+    // rejects, never hangs) if registration failed or hasn't finished —
+    // the redirect still proceeds either way, just without the
+    // deterministic channel's proof, falling back to fingerprint matching
+    // exactly like a missing click_id always has. See docs/decisions.md #21.
+    const clickId = await waitForClick();
     // iOS only — Android recovers deterministically via the Install
     // Referrer already, no clipboard handoff needed. Awaited so the write
     // actually completes before navigation tears the page down.
     if (platform === 'ios') {
-      await writeClipboardReferral(referralCode);
+      await writeClipboardReferral(referralCode, clickId);
     }
-    window.location.href = getStoreUrl(platform, referralCode, config);
-  }, [platform, referralCode, config, onRedirect, redirected]);
+    window.location.href = getStoreUrl(platform, referralCode, config, clickId);
+  }, [platform, referralCode, config, onRedirect, redirected, waitForClick]);
 
   // Try to open an already-installed app first (native mobile browsers only).
   useEffect(() => {

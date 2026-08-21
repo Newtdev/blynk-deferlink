@@ -864,3 +864,58 @@ registration racing the app-scheme navigation beyond the minimal slice
 needed here (awaiting the click before computing deterministic channels),
 raw device IDs in `referral_match_attempts`' logging, and the PHP/Node
 language-column-width and `languageMatches`-split divergence.
+
+---
+
+**Client-side implementation (web + mobile SDKs).** Every recovery path
+needed to end in a locked click before `/claim` would accept it — including
+Android's Install Referrer and iOS's clipboard tier, neither of which
+called the backend at all before this:
+
+- `@sparkle/referral-web`'s `getStoreUrl()` now embeds `click_id` in the
+  Android referrer param (alongside `code`) once click registration
+  resolves; `writeClipboardReferral()` embeds it in the clipboard payload
+  the same way. Both fall back to omitting it (not blocking) if
+  registration hasn't finished in time — the mobile SDK's deterministic
+  fast-path just isn't reachable for that install, same as an empty
+  referrer already meant before this change.
+- `ReferralLanding`'s `redirectToStore` now awaits click registration
+  (`useReferralClick`'s new `waitForClick()`, a promise that resolves to
+  `null` rather than hanging if registration fails or never starts) before
+  computing the store URL or clipboard payload — a `click_id` that doesn't
+  exist yet can't be embedded. Necessary, minimal slice of the click/
+  navigation-race finding, not that finding's full fix.
+- Found and fixed while implementing that: `StoreButton` renders a real
+  `<a href>` computed at render time (so never carrying `click_id`, or
+  anything from an async `onClick` handler at all) — without
+  `e.preventDefault()`, the browser's default navigation for that anchor
+  fires immediately on click, before any `await` in the handler resolves.
+  This means the *existing* clipboard write from #15/#18 likely already
+  raced against navigation on the CTA-tap path and often lost (the
+  countdown-redirect path was unaffected — no anchor involved there). Now
+  fixed: `onClick`, when supplied, fully owns navigation.
+- `@sparkle/referral-mobile`'s clipboard payload format gained an optional
+  trailing `click_id` field (`code:issued_ts` or
+  `code:issued_ts:click_id`); the parser anchors from the end and
+  disambiguates by whether the last segment parses as a number, so it
+  doesn't reopen the ambiguity a colon *within* a code already had to
+  handle.
+- `ReferralService.recover()`'s Android/iOS-clipboard paths now redeem
+  their `click_id` via `/match`'s deterministic fast-path (a real request)
+  instead of trusting the code with zero server contact — a redeem
+  failure (expired, already matched elsewhere, network error) falls back
+  to fingerprint matching (Android) or surfaces as no code recovered
+  (clipboard), never a code the app could display but never successfully
+  claim.
+- `claim()`'s `code?: string` override parameter is gone — there's no
+  longer a legitimate way to claim a code recovered in an *earlier*
+  session (even one the app stored itself), since doing so would require a
+  `click_id` this session has no way to supply. `useReferralCode()`'s
+  `onClipboardCode` and `ReferralPasteButton`'s `onCode` both gained a
+  `clickId: string | null` second argument to thread through.
+- Consequence worth being explicit about: **a manually-typed referral code
+  can no longer be claimed through this SDK at all** — the documented
+  "manual fallback" for a failed match can still prefill a signup field,
+  but has nothing to submit to `/claim` (a typed code was never locked to
+  any click). A host app that wants to honor one anyway needs its own,
+  separate, lower-trust path outside this SDK.

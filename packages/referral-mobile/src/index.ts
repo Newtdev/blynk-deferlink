@@ -3,7 +3,6 @@ export type { ReferralProviderProps } from './ReferralProvider';
 
 export { useReferralCode } from './useReferralCode';
 export { ReferralService } from './ReferralService';
-export type { RecoveryOutcome } from './ReferralService';
 
 export { collectFingerprint } from './fingerprint';
 export { DEFAULT_API_ENDPOINT } from './api';
@@ -26,4 +25,5 @@ export type {
   MatchMethod,
   MobilePlatform,
   ClaimResult,
+  RecoveryOutcome,
 } from './types';

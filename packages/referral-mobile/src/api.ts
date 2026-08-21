@@ -35,14 +35,18 @@ export function createApi(config: ReferralConfig) {
   const timeout = config.matchTimeoutMs ?? 5000;
 
   return {
-    /** POST /referral/match — fingerprint recovery (iOS + Android fallback). */
+    /**
+     * POST /referral/match — probabilistic fingerprint recovery (iOS, or
+     * Android's fallback when the Install Referrer is empty). `method` is
+     * implicit server-side ('fingerprint') whenever no click_id is sent —
+     * see `redeem()` for the deterministic counterpart.
+     */
     async match(fingerprint: DeviceFingerprint): Promise<MatchResponse> {
       return postJson<MatchResponse>(
         `${base}/referral/match`,
         {
           device_id: fingerprint.device_id,
           platform: fingerprint.platform,
-          method: 'fingerprint',
           fingerprint: {
             user_agent: '',
             device_model: fingerprint.device_model,
@@ -56,14 +60,38 @@ export function createApi(config: ReferralConfig) {
       );
     },
 
-    /** POST /referral/claim — record the conversion after signup. */
+    /**
+     * POST /referral/match — deterministic redeem: the caller already has a
+     * click_id (Android install referrer, iOS clipboard payload), so this
+     * skips fingerprint scoring server-side entirely and goes straight to a
+     * lookup + lock. See docs/decisions.md #21.
+     */
+    async redeem(
+      deviceId: string,
+      platform: MobilePlatform,
+      clickId: string,
+      method: Extract<MatchMethod, 'install_referrer' | 'clipboard'>,
+    ): Promise<MatchResponse> {
+      return postJson<MatchResponse>(
+        `${base}/referral/match`,
+        { device_id: deviceId, platform, click_id: clickId, method },
+        timeout,
+      );
+    },
+
+    /**
+     * POST /referral/claim — record the conversion after signup. `clickId`
+     * must reference a click already locked to `deviceId` (by `match()` or
+     * `redeem()`) — the server verifies this itself now rather than trusting
+     * whatever this call says happened, so `method`/`confidence` are no
+     * longer sent here at all. See docs/decisions.md #21.
+     */
     async claim(params: {
       referralCode: string;
       deviceId: string;
       platform: MobilePlatform;
-      method: MatchMethod;
+      clickId: string;
       userId: string;
-      confidence?: number | null;
     }): Promise<ClaimResult> {
       return postJson<ClaimResult>(
         `${base}/referral/claim`,
@@ -71,9 +99,8 @@ export function createApi(config: ReferralConfig) {
           referral_code: params.referralCode,
           device_id: params.deviceId,
           platform: params.platform,
-          method: params.method,
+          click_id: params.clickId,
           user_id: params.userId,
-          confidence: params.confidence ?? undefined,
         },
         timeout,
       );

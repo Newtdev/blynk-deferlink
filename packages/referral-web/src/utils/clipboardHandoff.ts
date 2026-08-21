@@ -13,9 +13,16 @@
 const CLIPBOARD_PREFIX = 'sparkle_ref:v1:';
 
 /**
- * Writes `sparkle_ref:v1:<code>:<issued_unix_ts>` to the clipboard. The
- * timestamp lets the app reject a stale payload without a network round
- * trip — see the mobile SDK's staleness check.
+ * Writes `sparkle_ref:v1:<code>:<issued_unix_ts>` (or
+ * `sparkle_ref:v1:<code>:<issued_unix_ts>:<click_id>` when the click has
+ * registered in time) to the clipboard. The timestamp lets the app reject a
+ * stale payload without a network round trip — see the mobile SDK's
+ * staleness check. `clickId`, when present, lets the app redeem
+ * deterministically via /match instead of trusting the code alone — /claim
+ * now requires a locked click, and this is how the clipboard tier gets one.
+ * Omit it (or pass null) if registration hasn't resolved yet — the app falls
+ * back to fingerprint matching exactly like a missing click_id always has.
+ * See docs/decisions.md #21.
  *
  * Best-effort only, deliberately: clipboard access can be blocked (in-app
  * browsers like WhatsApp/Instagram commonly restrict or fully disable it,
@@ -23,10 +30,12 @@ const CLIPBOARD_PREFIX = 'sparkle_ref:v1:';
  * fingerprint matching remains the fallback either way, so a failure here
  * is swallowed rather than surfaced as an error to the caller.
  */
-export async function writeClipboardReferral(code: string): Promise<void> {
+export async function writeClipboardReferral(code: string, clickId?: string | null): Promise<void> {
   if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return;
 
-  const payload = `${CLIPBOARD_PREFIX}${code}:${Math.floor(Date.now() / 1000)}`;
+  const parts = [code, String(Math.floor(Date.now() / 1000))];
+  if (clickId) parts.push(clickId);
+  const payload = `${CLIPBOARD_PREFIX}${parts.join(':')}`;
 
   try {
     await navigator.clipboard.writeText(payload);

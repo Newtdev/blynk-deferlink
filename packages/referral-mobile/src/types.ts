@@ -44,6 +44,13 @@ export interface DeviceFingerprint {
 export interface MatchResponse {
   matched: boolean;
   referral_code: string | null;
+  /**
+   * The click this match locked, when it matched — required to /claim
+   * afterward, since /claim now verifies the click is actually locked to
+   * this device instead of trusting the claim request alone. See
+   * docs/decisions.md #21.
+   */
+  click_id?: string;
   confidence?: number;
   match_method?: MatchMethod;
 }
@@ -54,6 +61,19 @@ export interface ClaimResult {
   error?: string;
 }
 
+/**
+ * The result of one recovery attempt, however it happened. `clickId` is
+ * required to /claim afterward (see MatchResponse) — a `code` with no
+ * `clickId` can never actually be claimed, so ReferralService treats that
+ * combination as equivalent to no code at all rather than a partial result.
+ */
+export interface RecoveryOutcome {
+  code: string | null;
+  method: MatchMethod | null;
+  confidence: number | null;
+  clickId: string | null;
+}
+
 export interface ReferralResult {
   code: string | null;
   method: MatchMethod | null;
@@ -61,18 +81,20 @@ export interface ReferralResult {
   loading: boolean;
   error: Error | null;
   /**
-   * Records the conversion after signup. Call with just `userId` for the
-   * common case (claiming the `code` this same hook call just recovered).
-   * Pass `code` explicitly only if the app is claiming a code it recovered
-   * and stored itself in an *earlier* session — the SDK persists nothing
-   * to disk at all, so a fresh app launch has no memory of a previous
-   * recovery unless the app kept it.
+   * Records the conversion after signup. Claims whatever `code` this same
+   * hook call recovered — there's no way to claim a code recovered in an
+   * earlier session anymore, even if the app stored it itself: /claim now
+   * requires a `click_id` referencing a click actually locked server-side
+   * (see docs/decisions.md #21), and the SDK persists nothing to disk, so
+   * a fresh session has no legitimate click_id to offer for anything it
+   * didn't just recover itself.
    */
-  claim: (userId: string, code?: string) => Promise<ClaimResult>;
+  claim: (userId: string) => Promise<ClaimResult>;
   /**
    * Wire this to `<ReferralPasteButton onCode={onClipboardCode} />` on iOS
    * — applies a deterministically-recovered code, overriding whatever the
-   * automatic fingerprint path already found.
+   * automatic fingerprint path already found. `clickId` comes straight
+   * from the same clipboard payload; pass it through unchanged.
    */
-  onClipboardCode: (code: string) => void;
+  onClipboardCode: (code: string, clickId: string | null) => void;
 }
