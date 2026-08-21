@@ -9,6 +9,9 @@ Pairs with `sparkle/referral-sdk` (PHP) or `@sparkle/referral-sdk-node`
 (Node/Express) — either backend, same API contract — and
 `@sparkle/referral-web` (landing page).
 
+**New to this package?** [`docs/integration/referral-mobile.md`](../../docs/integration/referral-mobile.md)
+is a step-by-step setup guide; this README is API/config reference.
+
 > **Looking for app store IDs/links?** They don't belong here — this package
 > only ever runs after your app is already installed, so it never needs to
 > know where to send someone to download it. Set `androidPackage`/`iosAppId`

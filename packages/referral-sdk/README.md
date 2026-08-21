@@ -15,6 +15,9 @@ not run PHP. Either pairs with `@sparkle/referral-web` (landing page) and
 `@sparkle/referral-mobile` (React Native recovery), which don't care which
 one is behind `apiEndpoint`.
 
+**New to this package?** [`docs/integration/referral-sdk.md`](../../docs/integration/referral-sdk.md)
+is a step-by-step setup guide; this README is API/config reference.
+
 ---
 
 ## Install

@@ -114,9 +114,10 @@ other.
 - Swap the mock backend for a real one — either `packages/referral-sdk` (PHP)
   or `packages/referral-sdk-node` (Node/Express + Postgres, deployable to
   Vercel or any Node host). Same API contract; the web/mobile SDKs don't care
-  which one is behind `apiEndpoint`. See each package's README for setup.
+  which one is behind `apiEndpoint`. See
+  [`docs/integration/`](docs/integration/) for step-by-step setup guides for
+  all four packages, or each package's own README for API/config reference.
 - Wire real referral-code validation (`code_validator`) and reward distribution
   (`on_claim_callback`) in whichever backend config you use.
 - Link previews (WhatsApp/social) need server-side OG tags — see the web SDK
   README and `buildReferralMeta`.
-```

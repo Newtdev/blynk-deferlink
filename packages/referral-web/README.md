@@ -9,6 +9,9 @@ Pairs with `sparkle/referral-sdk` (PHP) or `@sparkle/referral-sdk-node`
 (Node/Express) — either backend, same API contract — and
 `@sparkle/referral-mobile` (React Native).
 
+**New to this package?** [`docs/integration/referral-web.md`](../../docs/integration/referral-web.md)
+is a step-by-step setup guide; this README is prop/config reference.
+
 ## Install
 
 ```bash
