@@ -18,21 +18,19 @@ flowchart TD
         E1 --> F1["App installed"]
         F1 --> G1{"Install Referrer<br/>returns code + token?"}
         G1 -->|"yes · ~100% of real installs"| H1["<b>DETERMINISTIC</b><br/>method: install_referrer<br/>fully local · no network call"]
-        G1 -->|"no · empty / sideload"| M
+        G1 -.->|"no · empty / sideload<br/><b>→ PROBABILISTIC</b>"| M
     end
 
     subgraph ios [iOS]
         D2 --> E2["Token + code written to clipboard,<br/>right before store redirect"]
         E2 --> F2["App installed"]
-        F2 -->|"automatic, every launch"| G2["Fingerprint collected,<br/>sent to Match Engine"]
-        G2 --> M
-        F2 -.->|"optional · explicit tap"| G3{"User taps<br/>&lt;ReferralPasteButton&gt;?"}
+        F2 -.->|"automatic, every launch<br/><b>→ PROBABILISTIC</b>"| M
+        F2 -->|"optional · explicit tap"| G3{"User taps<br/>&lt;ReferralPasteButton&gt;?"}
         G3 -->|yes| H2["<b>DETERMINISTIC</b><br/>method: clipboard<br/>fully local · overrides match result"]
-        G3 -.->|"not tapped"| G2
     end
 
-    M["Backend Match Engine<br/>scores fingerprint vs. recent unmatched clicks<br/>(IP · device · screen · timezone · language · recency)"] --> N{"score ≥ min_confidence<br/>(default 70)?"}
-    N -->|yes| O1["<b>PROBABILISTIC</b><br/>method: fingerprint<br/>click locked to device, atomically"]
+    M["<b>PROBABILISTIC MATCHING</b><br/>Backend Match Engine — scores fingerprint<br/>vs. recent unmatched clicks<br/>(IP · device · screen · timezone · language · recency)"] --> N{"score ≥ min_confidence<br/>(default 70)?"}
+    N -->|yes| O1["method: fingerprint<br/>click locked to device, atomically"]
     N -->|no| O2["No match<br/>code: null"]
 
     H1 --> P["④ code + token ready<br/>(or a manual code, no token, if unmatched)"]
@@ -49,9 +47,18 @@ flowchart TD
     classDef prob stroke-dasharray: 6 3
     classDef nomatch stroke-dasharray: 1 3
     class H1,H2 det
-    class O1 prob
+    class M,O1 prob
     class O2 nomatch
 ```
+
+Both platforms' fingerprint attempts (Android's fallback when the Install
+Referrer is empty, and iOS's automatic default) feed into the *same*
+`PROBABILISTIC MATCHING` box — that's the entire probabilistic side of
+this diagram, clearly separate from the two `DETERMINISTIC` boxes that
+live inside each platform's own lane. Fingerprint matching is never part
+of the deterministic path on either platform; it's what runs *instead*,
+when the deterministic signal isn't available (Android) or hasn't been
+confirmed yet by a tap (iOS).
 
 A share link is registered as a click and signed once, for free. Android
 and iOS then recover it through different means — the same
