@@ -22,14 +22,19 @@ class ClickStore
     }
 
     /**
-     * Store a landing-page click. Returns the generated click_id (UUID v4).
+     * Store a landing-page click. Returns the generated click_id (UUID v4)
+     * and its expiry — the caller (ClickController) signs a click token
+     * against that same expiry immediately after, so the token and the row
+     * always agree on how long the click is good for.
      *
      * @param array<string,mixed> $fingerprint Client-collected fingerprint.
+     * @return array{click_id: string, expires_at: \DateTimeImmutable}
      */
-    public function store(string $referralCode, array $fingerprint, string $ip): string
+    public function store(string $referralCode, array $fingerprint, string $ip): array
     {
-        $clickId  = self::uuid4();
-        $expires  = gmdate('Y-m-d H:i:s', time() + $this->config->matchWindowSeconds());
+        $clickId    = self::uuid4();
+        $expiresAt  = new \DateTimeImmutable('@' . (time() + $this->config->matchWindowSeconds()));
+        $expires    = $expiresAt->format('Y-m-d H:i:s');
 
         $stmt = $this->pdo->prepare(
             'INSERT INTO referral_clicks
@@ -59,7 +64,7 @@ class ClickStore
             ':expires'       => $expires,
         ]);
 
-        return $clickId;
+        return ['click_id' => $clickId, 'expires_at' => $expiresAt];
     }
 
     /**
@@ -93,60 +98,36 @@ class ClickStore
     }
 
     /**
-     * The row /claim consults as its entire proof of legitimacy: a click_id
-     * only ever reaches a real device via a locked /match response, the
-     * Android install-referrer param, or the iOS clipboard payload — never
-     * handed out to an arbitrary requester — so "this click is matched, and
-     * matched to this device" is the whole trust boundary. See
-     * ConversionTracker::claim() and docs/decisions.md #21.
+     * The row /claim consults after verifying a click token's signature:
+     * the token only ever proves *which* click_id is real and unexpired,
+     * not what state it's in — this is where /claim finds out whether it's
+     * already matched (fingerprint path — confirm the lock belongs to this
+     * device) or not yet (deterministic path's first real use — lock it
+     * right there). See ConversionTracker::claim() and docs/decisions.md #22.
      *
-     * @return array{referral_code: string, matched_device_id: ?string, match_method: ?string, match_confidence: ?float}|null
+     * @return array{referral_code: string, matched: bool, matched_device_id: ?string, match_method: ?string, match_confidence: ?float, expires_at: \DateTimeImmutable}|null
      */
-    public function findLockedClick(string $clickId): ?array
+    public function findClickForClaim(string $clickId): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT referral_code, matched, matched_device_id, match_method, match_confidence
+            'SELECT referral_code, matched, matched_device_id, match_method, match_confidence, expires_at
              FROM referral_clicks WHERE click_id = :click_id'
         );
         $stmt->execute([':click_id' => $clickId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($row === false || !((bool) $row['matched'])) {
+        if ($row === false) {
             return null;
         }
 
         return [
             'referral_code'     => (string) $row['referral_code'],
+            'matched'           => (bool) $row['matched'],
             'matched_device_id' => $row['matched_device_id'],
             'match_method'      => $row['match_method'],
             'match_confidence'  => $row['match_confidence'] !== null ? (float) $row['match_confidence'] : null,
+            'expires_at'        => new \DateTimeImmutable($row['expires_at'], new \DateTimeZone('UTC')),
         ];
-    }
-
-    /**
-     * Look up a click by id for the deterministic recovery paths (Android
-     * install referrer, iOS clipboard) — both already know their click_id
-     * (embedded by the web landing page at click time) instead of needing
-     * fingerprint scoring to find it. Returns null if the click doesn't
-     * exist, is already matched, or has expired, so the caller can fall
-     * back to fingerprint matching exactly like an empty referrer does.
-     *
-     * @return array{referral_code: string}|null
-     */
-    public function findUnmatchedClick(string $clickId): ?array
-    {
-        $stmt = $this->pdo->prepare(
-            'SELECT referral_code, matched FROM referral_clicks
-             WHERE click_id = :click_id AND expires_at > UTC_TIMESTAMP()'
-        );
-        $stmt->execute([':click_id' => $clickId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($row === false || (bool) $row['matched']) {
-            return null;
-        }
-
-        return ['referral_code' => (string) $row['referral_code']];
     }
 
     /** Count clicks from an IP within the last hour (rate limiting). */

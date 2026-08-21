@@ -8,6 +8,7 @@ import { ConversionTracker, resolveDeviceId } from '../services/conversionTracke
 import { FingerprintMatcher } from '../services/fingerprintMatcher.js';
 import { RateLimiter } from '../services/rateLimiter.js';
 import { isValidCode } from '../support/codeValidator.js';
+import { getClickTokenSecret, signClickToken } from '../support/clickToken.js';
 
 const clickFingerprintSchema = z.object({
   user_agent: z.string().nullish(),
@@ -46,26 +47,21 @@ const matchFingerprintSchema = z.object({
 const matchSchema = z.object({
   device_id: z.string().min(1).max(255),
   platform: z.enum(['ios', 'android']),
-  // Present only for the deterministic redeem path (Android install
-  // referrer, iOS clipboard) — the mobile SDK already has a click_id, so
-  // scoring is skipped entirely in favor of a direct lookup + lock. Absent
-  // for the probabilistic fingerprint path, where `method` is implicitly
-  // 'fingerprint'. See decisions.md #21.
-  click_id: z.string().min(1).max(36).nullish(),
-  method: z.enum(['install_referrer', 'clipboard']).nullish(),
   fingerprint: matchFingerprintSchema,
 });
 
 const claimSchema = z.object({
-  referral_code: z.string().min(1).max(50),
   device_id: z.string().min(1).max(255),
   platform: z.enum(['ios', 'android']),
-  // Required now — this is the entire proof a real /click + /match (or
-  // deterministic redeem) happened for this device. `method`/`confidence`
-  // are no longer accepted here at all: they're derived server-side from
-  // the click row this click_id references, not trusted from the request.
-  // See decisions.md #21.
-  click_id: z.string().min(1).max(36),
+  // The entire proof — a signed token from /click or /match (see
+  // support/clickToken.ts). No referral_code, no click_id: both are
+  // derived server-side from the click the verified token references,
+  // never trusted from the request. See decisions.md #21/#22.
+  token: z.string().min(1).max(512),
+  // Only meaningful if the token's click hasn't been matched yet (the
+  // deterministic path's first real use) — a labeling detail, not a
+  // security check either way. Ignored otherwise.
+  method: z.enum(['install_referrer', 'clipboard', 'fingerprint']).nullish(),
   user_id: z.string().max(255).nullish(),
 });
 
@@ -101,8 +97,14 @@ export function referralRouter(db: Db, config: ReferralConfig): Router {
         return res.status(422).json({ success: false, error: 'invalid_or_expired_code' });
       }
 
-      const clickId = await clicks.store(referral_code, fingerprint, ip);
-      return res.json({ success: true, click_id: clickId });
+      const { clickId, expiresAt } = await clicks.store(referral_code, fingerprint, ip);
+      // Signed for free, right here — this is what lets the deterministic
+      // recovery paths (Android referrer, iOS clipboard) stay fully local
+      // and network-free: the mobile SDK reads this token straight off the
+      // referrer/clipboard and only ever sends it back at /claim, not at
+      // recovery time. See decisions.md #22.
+      const token = signClickToken(clickId, expiresAt, getClickTokenSecret());
+      return res.json({ success: true, click_id: clickId, token });
     } catch (err) {
       next(err);
     }
@@ -115,35 +117,13 @@ export function referralRouter(db: Db, config: ReferralConfig): Router {
         return res.status(422).json({ success: false, error: 'invalid_request', details: parsed.error.flatten() });
       }
 
-      const { device_id, platform, click_id, method, fingerprint } = parsed.data;
+      const { device_id, platform, fingerprint } = parsed.data;
       const throttle = await rateLimiter.check('match', device_id);
       if (throttle.limited) {
         return res.status(429).json({ success: false, error: 'rate_limited', retry_after: throttle.retryAfter });
       }
 
       const storedDeviceId = resolveDeviceId(device_id, config);
-
-      // Deterministic redeem: the client already knows click_id (Android
-      // install referrer, iOS clipboard) — skip scoring entirely and go
-      // straight to a lookup + lock. Falls through to a plain "no match"
-      // (not an error) if the click is missing/expired/already claimed, so
-      // the caller can fall back to fingerprint matching exactly like an
-      // empty referrer does today. See decisions.md #21.
-      if (click_id) {
-        const candidate = await clicks.findUnmatchedClick(click_id);
-        if (!candidate) {
-          return res.json({ matched: false, referral_code: null });
-        }
-        if (!(await clicks.lockToDevice(click_id, storedDeviceId, method ?? 'install_referrer'))) {
-          return res.json({ matched: false, referral_code: null });
-        }
-        return res.json({
-          matched: true,
-          referral_code: candidate.referralCode,
-          click_id,
-          match_method: method ?? 'install_referrer',
-        });
-      }
 
       const result = await matcher.match({
         ip: clientIp(req),
@@ -166,10 +146,12 @@ export function referralRouter(db: Db, config: ReferralConfig): Router {
         return res.json({ matched: false, referral_code: null });
       }
 
+      const token = signClickToken(result.clickId, result.expiresAt, getClickTokenSecret());
       return res.json({
         matched: true,
         referral_code: result.referralCode,
         click_id: result.clickId,
+        token,
         confidence: result.confidence,
         match_method: 'fingerprint',
       });
@@ -191,22 +173,20 @@ export function referralRouter(db: Db, config: ReferralConfig): Router {
         return res.status(429).json({ success: false, error: 'rate_limited', retry_after: throttle.retryAfter });
       }
 
-      if (!(await isValidCode(data.referral_code, config))) {
-        return res.status(422).json({ success: false, error: 'invalid_or_expired_code' });
-      }
-
       const result = await conversions.claim({
-        referralCode: data.referral_code,
         deviceId: data.device_id,
         platform: data.platform,
-        clickId: data.click_id,
+        token: data.token,
+        method: data.method ?? undefined,
         userId: data.user_id ?? null,
       });
 
       if (!result.success) {
         if ('unverified' in result) {
-          // click_id doesn't reference a click locked to this device+code —
-          // no real /click + /match (or deterministic redeem) happened.
+          // token failed verification (forged/tampered/expired), doesn't
+          // reference a real click, or references a click locked to a
+          // different device — no real /click + /match happened for this
+          // device. See decisions.md #22.
           return res.status(403).json({ success: false, error: 'unverified_claim' });
         }
         return res.status(409).json({ success: false, error: result.duplicate ? 'already_claimed' : 'claim_failed' });

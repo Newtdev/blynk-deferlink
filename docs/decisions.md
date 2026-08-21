@@ -864,3 +864,87 @@ registration racing the app-scheme navigation beyond the minimal slice
 needed here (awaiting the click before computing deterministic channels),
 raw device IDs in `referral_match_attempts`' logging, and the PHP/Node
 language-column-width and `languageMatches`-split divergence.
+
+---
+
+## 22. #21's redeem round-trip replaced with a click-time-signed token — Done
+
+**Problem, caught in review before the client half of #21 shipped.** #21's
+`/claim` fix required a `click_id` the server had actually locked — correct
+for the fingerprint path, which already hits the network. But for the two
+*deterministic* recovery paths (Android Install Referrer, iOS clipboard),
+the implementation added a "redeem" round-trip to `/match` just to turn a
+locally-readable `click_id` into a locked one *before the app could even
+display a code*. That defeats the entire reason those two tiers exist:
+they're deterministic and network-free specifically so recovery works
+instantly, offline, without depending on the web landing page being on a
+matching SDK version. Making recovery itself depend on a server round-trip
+was solving #21's problem (proving `/claim` requests are legitimate) at
+the wrong point in the flow — and for an integration that never even calls
+`claim()` (deferred-deep-linking-only, which the READMEs explicitly
+support), it was pure cost with zero benefit.
+
+**Decision.** `/click` already runs once per landing-page visit and
+already returns `click_id` for free — have it *also* return a short-lived,
+HMAC-signed token (`sign(click_id, expires_at)`, one server-side secret;
+`/match` mints one too, on a successful lock, for the fingerprint path).
+That token rides through the Android referrer param / iOS clipboard
+payload exactly like `click_id` already did — read purely locally on the
+device, zero network, exactly as fast as before #21 touched anything. The
+token is only ever sent over the network once, at `claim()` time, which is
+when server verification should happen anyway. Verification is a cheap
+HMAC compare (no DB hit for a forged/expired token) and, on success, reuses
+the same atomic `lockToDevice` compare-and-swap #21 already built — either
+confirming a lock `/match` made earlier (fingerprint path), or making that
+lock for the first time right there (deterministic path's first real use).
+
+This also simplified #21's implementation: the deterministic
+`click_id`+`method` fast-path added to `/match` is gone — that
+verification moved entirely into `/claim`, so there's one unified
+claim-time check instead of two different mechanisms. `/claim`'s request
+no longer includes `referral_code` at all (derived from the verified
+token's click row) or `click_id` (superseded by `token`).
+
+**Token design.** `<click_id>.<exp_unix_seconds>.<hmac_sha256_hex>` — plain
+delimited text, not JWT (a UUID click_id and digits-only exp never contain
+`.`, so no encoding step is needed, matching this codebase's existing
+hand-rolled formats). Signed with a new required secret
+(`CLICK_TOKEN_SECRET` / `click_token_secret`) — required, not optional like
+`CRON_SECRET`/`ANALYTICS_SECRET`, since every `/click` needs it; an
+unconfigured deploy fails loudly at first use (same pattern as
+`DATABASE_URL`), not silently. `exp` is always the click's own
+`expires_at` — single source of truth, no separate token-lifetime policy.
+Verification uses constant-time comparison
+(`crypto.timingSafeEqual`/`hash_equals`). `click_id` alone is no longer
+sensitive — without the token it's useless — so it's still returned in
+responses for observability.
+
+**A real bug caught by manually smoke-testing this** (no PHPUnit runner
+available in this environment, so PHP was verified by hand same as #21):
+`ConversionTracker::claim()` didn't accept an injectable "now" for token
+verification, defaulting to real wall-clock time. Tests that signed a
+token against a fixed test date and expected it to *pass* verification
+silently started failing for the wrong reason (expiry, not the thing
+actually being tested) once real time moved past that fixed date — and
+nothing caught it, because a verification failure and every other rejection
+reason return the identical `unverified` shape. Fixed by adding an
+optional `now` parameter to `claim()` in both backends (mirroring the
+pattern `FingerprintMatcher.score()` and `ClickToken` itself already use),
+and adding explicit "verification actually passes" tests in both
+languages — not just rejection tests — that assert the happy path reaches
+past the unverified-claim check (proven by an unguarded `db: null` — the
+same nullable-for-testability pattern `FingerprintMatcher` already used —
+throwing once claim() reaches the DB-touching part of success, rather than
+returning `unverified`).
+
+**Verified end-to-end via the mock backend**, not just unit tests: a
+deterministic click → claim flow that never calls `/match` at all, a
+probabilistic click → match → claim flow, and three fraud rejections
+(fully fabricated token, tampered token, and a second device attempting to
+claim a token whose click was already locked to the first).
+
+**Client-side implementation** (web + mobile SDKs) follows in the
+corresponding PR — see that PR's description for the web/mobile specifics
+(embedding `token` instead of `click_id`, Android's `recoverAndroid()`
+returning immediately on a local referrer read with no network call,
+`ReferralService.applyClipboardCode()` reverting to synchronous).

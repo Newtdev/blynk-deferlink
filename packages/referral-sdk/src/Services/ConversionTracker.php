@@ -6,18 +6,21 @@ namespace Sparkle\Referral\Services;
 
 use PDO;
 use RuntimeException;
+use Sparkle\Referral\Support\ClickToken;
 use Sparkle\Referral\Support\ReferralConfig;
 
 /**
  * Records referral conversions and distributes rewards. Enforces one referral
  * per device for the device's lifetime.
  *
- * `claim()` trusts nothing the caller *says* happened — `match_method` and
- * `match_confidence` are pulled from the click row `/match` (or the
- * deterministic redeem path) already locked, not from the claim request
- * itself. See docs/decisions.md #21: a client-declared device_id/method/
- * confidence with no server-side proof was previously enough to mint a
- * reward with no real click or match ever happening.
+ * `claim()` trusts nothing the caller *says* happened — the entire proof is
+ * a signed `$token` (see Support/ClickToken.php), verified here, never a
+ * client-declared referral_code/click_id/method/confidence. See
+ * docs/decisions.md #21/#22: a client-declared device_id/method/confidence
+ * with no server-side proof was previously enough to mint a reward with no
+ * real click or match ever happening; #22 moved that proof to a signed
+ * token minted for free at /click time instead of a redeem round-trip that
+ * made ordinary code recovery depend on the network.
  */
 final class ConversionTracker
 {
@@ -35,31 +38,58 @@ final class ConversionTracker
     }
 
     /**
-     * Record a conversion after a successful match + signup.
+     * Record a conversion after a successful match + signup. `$method` is
+     * only read when the token's click hasn't been matched yet (the
+     * deterministic path's first real use) — a labeling detail, not a
+     * security check either way; ignored otherwise. `$now` defaults to the
+     * real current time; tests pass an explicit value for determinism —
+     * a fixed test date will eventually be in the past relative to
+     * whenever the suite actually runs, which would make a "should verify"
+     * case fail for the wrong reason (expiry) without anyone noticing,
+     * since a verification failure and a device/lock mismatch return the
+     * identical `unverified` shape.
      *
      * @return array{success: bool, duplicate?: bool, unverified?: bool, reward?: array<string,mixed>}
      */
     public function claim(
-        string $referralCode,
         string $deviceId,
         string $platform,
-        string $clickId,
+        string $token,
+        ?string $method = null,
         ?string $userId = null,
+        ?\DateTimeImmutable $now = null,
     ): array {
+        $now ??= new \DateTimeImmutable();
+
+        $verified = ClickToken::verify($token, $this->config->requireClickTokenSecret(), $now);
+        if ($verified === null) {
+            return ['success' => false, 'unverified' => true];
+        }
+
+        $click = $this->clicks->findClickForClaim($verified['click_id']);
+        if ($click === null || $click['expires_at'] < $now) {
+            return ['success' => false, 'unverified' => true];
+        }
+
         $storedDeviceId = self::resolveDeviceId($deviceId, $this->config);
 
-        // The entire proof: click_id must reference a row this exact device
-        // already won the lock on, for the exact code being claimed. A
-        // click_id never reaches an arbitrary requester — only the device
-        // that performed a real /click + /match (or deterministic redeem)
-        // ever sees one.
-        $locked = $this->clicks->findLockedClick($clickId);
-        if (
-            $locked === null
-            || $locked['referral_code'] !== $referralCode
-            || $locked['matched_device_id'] !== $storedDeviceId
-        ) {
-            return ['success' => false, 'unverified' => true];
+        if ($click['matched']) {
+            // Fingerprint path — /match already locked this click. Confirm
+            // the lock belongs to this device; nothing to lock here.
+            if ($click['matched_device_id'] !== $storedDeviceId) {
+                return ['success' => false, 'unverified' => true];
+            }
+            $matchMethod = $click['match_method'] ?? 'fingerprint';
+            $matchConfidence = $click['match_confidence'];
+        } else {
+            // Deterministic path's first real use — lock it right here,
+            // atomically. Lost the race (something else claimed it first)?
+            // Reject rather than proceed on a click that isn't actually ours.
+            $matchMethod = $method ?? 'fingerprint';
+            if (!$this->clicks->lockToDevice($verified['click_id'], $storedDeviceId, $matchMethod, null)) {
+                return ['success' => false, 'unverified' => true];
+            }
+            $matchConfidence = null;
         }
 
         if ($this->pdo === null) {
@@ -81,12 +111,12 @@ final class ConversionTracker
 
         try {
             $stmt->execute([
-                ':click_id'      => $clickId,
-                ':referral_code' => $referralCode,
+                ':click_id'      => $verified['click_id'],
+                ':referral_code' => $click['referral_code'],
                 ':device_id'     => $storedDeviceId,
                 ':platform'      => $platform,
-                ':match_method'  => $locked['match_method'] ?? 'fingerprint',
-                ':confidence'    => $locked['match_confidence'],
+                ':match_method'  => $matchMethod,
+                ':confidence'    => $matchConfidence,
                 ':user_id'       => $userId,
             ]);
         } catch (\PDOException $e) {
@@ -97,7 +127,7 @@ final class ConversionTracker
             throw $e;
         }
 
-        $reward = $this->distributeReward($referralCode, $userId);
+        $reward = $this->distributeReward($click['referral_code'], $userId);
 
         return ['success' => true, 'reward' => $reward];
     }

@@ -45,7 +45,7 @@ final class FingerprintMatcher
      *
      * @param array<string,mixed> $incoming Fingerprint sent by the app on first launch.
      * @param string              $requestIp Server-observed IP of the match request.
-     * @return array{click_id: string, referral_code: string, confidence: float}|null
+     * @return array{click_id: string, referral_code: string, confidence: float, expires_at: \DateTimeImmutable}|null
      */
     public function match(array $incoming, string $requestIp): ?array
     {
@@ -61,7 +61,7 @@ final class FingerprintMatcher
         $stmt = $this->pdo->prepare(
             'SELECT click_id, referral_code, ip_address, user_agent,
                     screen_width, screen_height, timezone, language, platform,
-                    created_at
+                    created_at, expires_at
              FROM referral_clicks
              WHERE matched = 0
                AND expires_at > UTC_TIMESTAMP()
@@ -91,6 +91,7 @@ final class FingerprintMatcher
             'click_id'      => (string) $best['click_id'],
             'referral_code' => (string) $best['referral_code'],
             'confidence'    => round($bestScore, 2),
+            'expires_at'    => new \DateTimeImmutable((string) $best['expires_at'], new \DateTimeZone('UTC')),
         ];
     }
 

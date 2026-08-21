@@ -20,19 +20,27 @@ first launch — no in-app rewards/conversion tracking), you can simply never
 call `/claim`. It stays fully functional but unused; nothing else depends
 on it.
 
-**`/claim` requires proof, not just a claim.** It takes a `click_id` — the
-one `/click` returned, later locked to this device by a successful `/match`
-call (including its deterministic fast-path — see below) — and verifies
-server-side that the referenced click is actually locked to this exact
-`device_id` and `referral_code` before recording a conversion or paying out
-a reward. It no longer accepts `method`/`confidence` from the request at
-all; those are read from what `/match` already recorded on the click row.
-A `/claim` call that doesn't reference a real, matching, device-owned lock
+**`/claim` requires proof, not just a claim.** It takes a `token` — a
+short-lived, signed proof `/click` returns (and `/match` returns again on a
+successful lock) — and verifies server-side that it's genuine, unexpired,
+and (once redeemed) locked to this exact `device_id` before recording a
+conversion or paying out a reward. It doesn't accept `referral_code` or
+`click_id` at all; both are derived from the click row the verified token
+references, never trusted from the request. A `/claim` call with an
+invalid, forged, expired, or already-claimed-by-a-different-device token
 gets rejected with `unverified_claim` — this replaced trusting whatever the
-request body said happened (see [docs/decisions.md #21](../../docs/decisions.md)).
+request body said happened (see
+[docs/decisions.md #21/#22](../../docs/decisions.md)).
 `@sparkle/referral-mobile` handles this automatically; if you're calling
-this API directly, `/match`'s response now includes `click_id` — thread it
-through to `/claim`.
+this API directly, thread `/click`'s (or `/match`'s) `token` straight
+through to `/claim` — read it locally off the Android referrer param / iOS
+clipboard payload for the deterministic paths, no extra network call
+needed until `/claim` itself.
+
+**Requires `CLICK_TOKEN_SECRET`** (generate with `openssl rand -hex 32`) —
+signs every token; `/click` and `/match` throw a clear error if it's unset
+when they actually need it, rather than silently minting tokens no one can
+ever verify.
 
 ## Why one codebase runs both long-running and serverless
 
@@ -101,9 +109,10 @@ exercise the real backend end-to-end.
 npm install -g vercel     # if you don't have it
 cd packages/referral-sdk-node
 vercel link                # first time: creates/links a Vercel project
-vercel env add DATABASE_URL production      # paste your Neon connection string
-vercel env add CRON_SECRET production       # any random string, for /cleanup
-vercel env add ANALYTICS_SECRET production  # any random string, for /analytics
+vercel env add DATABASE_URL production        # paste your Neon connection string
+vercel env add CLICK_TOKEN_SECRET production  # `openssl rand -hex 32` — required, not optional
+vercel env add CRON_SECRET production         # any random string, for /cleanup
+vercel env add ANALYTICS_SECRET production    # any random string, for /analytics
 vercel deploy --prod
 ```
 
@@ -185,14 +194,15 @@ curl "https://<project>.vercel.app/api/referral/analytics?since=2026-08-01T00:00
 }
 ```
 
-There's deliberately no "by match method" breakdown yet, even though every
-recovery method now reaches this backend (Android's Install Referrer and
-iOS's clipboard tier both redeem their `click_id` through `/match`'s
-deterministic fast-path — see
-[packages/referral-mobile/src/platform/android.ts](../referral-mobile/src/platform/android.ts) —
-instead of resolving entirely on-device as before). The data to build a
-real method breakdown now exists (`referral_clicks.match_method`, set at
-lock time), it's just not surfaced here yet — ask if you want it added.
+There's deliberately no "by match method" breakdown. Android's Install
+Referrer and iOS's clipboard tier both resolve entirely on-device (see
+[packages/referral-mobile/src/platform/android.ts](../referral-mobile/src/platform/android.ts))
+and never call this backend at recovery time at all — only `/claim`, once,
+sees which method actually happened (`referral_clicks.match_method`, set
+at lock time — either by `/match` for the fingerprint path, or by `/claim`
+itself redeeming a deterministic token for the first time). A method
+breakdown is buildable from that data, it's just not surfaced here yet —
+ask if you want it added.
 
 ## Using it as a library instead of the standalone service
 
