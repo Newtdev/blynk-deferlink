@@ -6,10 +6,20 @@ const NOW = Date.parse('2026-08-14T12:00:00Z');
 const NOW_SECONDS = NOW / 1000;
 const WINDOW = 172800; // 48h, matching the backend's default match window
 
-test('parses a well-formed, fresh payload', () => {
+test('parses a well-formed, fresh payload (no click_id)', () => {
   const raw = `sparkle_ref:v1:ABC123:${NOW_SECONDS}`;
   const result = parseClipboardReferralPayload(raw, WINDOW, NOW);
-  assert.deepEqual(result, { code: 'ABC123', issuedAt: NOW_SECONDS });
+  assert.deepEqual(result, { code: 'ABC123', issuedAt: NOW_SECONDS, clickId: null });
+});
+
+test('parses a well-formed payload with a click_id', () => {
+  const raw = `sparkle_ref:v1:ABC123:${NOW_SECONDS}:a1b2c3d4-e5f6-7890-abcd-ef1234567890`;
+  const result = parseClipboardReferralPayload(raw, WINDOW, NOW);
+  assert.deepEqual(result, {
+    code: 'ABC123',
+    issuedAt: NOW_SECONDS,
+    clickId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  });
 });
 
 test('rejects a payload without the expected prefix', () => {
@@ -52,4 +62,11 @@ test('a referral code itself may contain colons without breaking parsing', () =>
   const raw = `sparkle_ref:v1:AB:C123:${NOW_SECONDS}`;
   const result = parseClipboardReferralPayload(raw, WINDOW, NOW);
   assert.equal(result?.code, 'AB:C123');
+  assert.equal(result?.clickId, null);
+});
+
+test('a colon-containing code and a click_id together still parse correctly', () => {
+  const raw = `sparkle_ref:v1:AB:C123:${NOW_SECONDS}:some-click-id`;
+  const result = parseClipboardReferralPayload(raw, WINDOW, NOW);
+  assert.deepEqual(result, { code: 'AB:C123', issuedAt: NOW_SECONDS, clickId: 'some-click-id' });
 });

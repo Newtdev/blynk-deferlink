@@ -37,8 +37,13 @@ const DEFAULT_MATCH_WINDOW_SECONDS = 172800; // 48h, matching the backend's defa
 
 export interface ReferralPasteButtonProps {
   readonly style?: StyleProp<ViewStyle>;
-  /** Called once a valid, non-stale referral payload is read from the clipboard. */
-  readonly onCode?: (code: string) => void;
+  /**
+   * Called once a valid, non-stale referral payload is read from the
+   * clipboard. `clickId` is null for an older payload (written before this
+   * SDK version) or one whose click registration didn't resolve in time —
+   * wire both straight through to `onClipboardCode` from `useReferralCode()`.
+   */
+  readonly onCode?: (code: string, clickId: string | null) => void;
 
   // Theming — all optional, all system default if omitted. `UIPasteControl`
   // is genuinely customizable (colors, corner shape, icon/label layout),
@@ -100,7 +105,7 @@ export function ReferralPasteButton({
       displayMode={displayMode}
       onPaste={(event) => {
         const parsed = parseClipboardReferralPayload(event.nativeEvent.text, maxAgeSeconds);
-        if (parsed) onCode?.(parsed.code);
+        if (parsed) onCode?.(parsed.code, parsed.clickId);
       }}
     />
   );
