@@ -38,6 +38,8 @@ export interface MatchResult {
   clickId: string;
   referralCode: string;
   confidence: number;
+  /** So the caller (routes/referral.ts) can sign a click token against the same expiry the row already has. */
+  expiresAt: Date;
 }
 
 /**
@@ -148,6 +150,7 @@ export class FingerprintMatcher {
         timezone: referralClicks.timezone,
         language: referralClicks.language,
         createdAt: referralClicks.createdAt,
+        expiresAt: referralClicks.expiresAt,
       })
       .from(referralClicks)
       .where(
@@ -184,6 +187,7 @@ export class FingerprintMatcher {
       clickId: best!.clickId,
       referralCode: best!.referralCode,
       confidence: Math.round(bestScore * 100) / 100,
+      expiresAt: best!.expiresAt,
     };
   }
 

@@ -7,7 +7,9 @@ namespace Sparkle\Referral\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Sparkle\Referral\Services\ClickStore;
+use Sparkle\Referral\Support\ClickToken;
 use Sparkle\Referral\Support\CodeValidator;
+use Sparkle\Referral\Support\ReferralConfig;
 
 /**
  * POST /referral/click — called by the landing page when a user arrives.
@@ -17,6 +19,7 @@ class ClickController
     public function __construct(
         private readonly ClickStore $clicks,
         private readonly CodeValidator $codes,
+        private readonly ReferralConfig $config,
     ) {
     }
 
@@ -44,15 +47,23 @@ class ClickController
             ], 422);
         }
 
-        $clickId = $this->clicks->store(
+        $stored = $this->clicks->store(
             referralCode: $code,
             fingerprint: $data['fingerprint'],
             ip: (string) $request->ip(),
         );
 
+        // Signed for free, right here — this is what lets the deterministic
+        // recovery paths (Android referrer, iOS clipboard) stay fully local
+        // and network-free: the mobile SDK reads this token straight off
+        // the referrer/clipboard and only ever sends it back at /claim, not
+        // at recovery time. See docs/decisions.md #22.
+        $token = ClickToken::sign($stored['click_id'], $stored['expires_at'], $this->config->requireClickTokenSecret());
+
         return response()->json([
             'success'  => true,
-            'click_id' => $clickId,
+            'click_id' => $stored['click_id'],
+            'token'    => $token,
         ]);
     }
 }

@@ -42,6 +42,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Click token secret
+    |--------------------------------------------------------------------------
+    | Signs the proof /claim verifies (see Support/ClickToken.php and
+    | docs/decisions.md #22) — required, not optional. Generate one with
+    | `openssl rand -hex 32` and set REFERRAL_CLICK_TOKEN_SECRET in your
+    | environment; /click and /match both throw a clear error if this is
+    | null when they actually need it, rather than silently minting tokens
+    | no one can ever verify.
+    */
+    'click_token_secret' => env('REFERRAL_CLICK_TOKEN_SECRET'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Route registration
     |--------------------------------------------------------------------------
     */

@@ -7,7 +7,6 @@ namespace Sparkle\Referral\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Sparkle\Referral\Services\ConversionTracker;
-use Sparkle\Referral\Support\CodeValidator;
 
 /**
  * POST /referral/claim — called by the mobile app after a successful match
@@ -17,43 +16,38 @@ class ClaimController
 {
     public function __construct(
         private readonly ConversionTracker $conversions,
-        private readonly CodeValidator $codes,
     ) {
     }
 
     public function __invoke(Request $request): JsonResponse
     {
-        // `method`/`confidence` are no longer accepted here at all — they're
-        // derived server-side from the click row `click_id` references, not
-        // trusted from the request. See docs/decisions.md #21.
+        // No referral_code, no click_id: both are derived server-side from
+        // the click a verified token references, never trusted from the
+        // request. `method` is only meaningful if that click hasn't been
+        // matched yet — a labeling detail, not a security check either
+        // way. See docs/decisions.md #21/#22.
         $data = $request->validate([
-            'referral_code' => ['required', 'string', 'max:50'],
-            'device_id'     => ['required', 'string', 'max:255'],
-            'platform'      => ['required', 'in:ios,android'],
-            'click_id'      => ['required', 'string', 'max:36'],
-            'user_id'       => ['nullable', 'string', 'max:255'],
+            'device_id' => ['required', 'string', 'max:255'],
+            'platform'  => ['required', 'in:ios,android'],
+            'token'     => ['required', 'string', 'max:512'],
+            'method'    => ['nullable', 'in:install_referrer,clipboard,fingerprint'],
+            'user_id'   => ['nullable', 'string', 'max:255'],
         ]);
 
-        if (!$this->codes->isValid($data['referral_code'])) {
-            return response()->json([
-                'success' => false,
-                'error'   => 'invalid_or_expired_code',
-            ], 422);
-        }
-
         $result = $this->conversions->claim(
-            referralCode: $data['referral_code'],
             deviceId: $data['device_id'],
             platform: $data['platform'],
-            clickId: $data['click_id'],
+            token: $data['token'],
+            method: $data['method'] ?? null,
             userId: $data['user_id'] ?? null,
         );
 
         if (!($result['success'] ?? false)) {
             if ($result['unverified'] ?? false) {
-                // click_id doesn't reference a click locked to this
-                // device+code — no real /click + /match (or deterministic
-                // redeem) happened.
+                // Token failed verification (forged/tampered/expired),
+                // doesn't reference a real click, or references a click
+                // locked to a different device — no real /click + /match
+                // happened for this device. See docs/decisions.md #22.
                 return response()->json([
                     'success' => false,
                     'error'   => 'unverified_claim',

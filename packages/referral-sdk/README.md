@@ -46,7 +46,11 @@ Run `database/schema.sql` against your database, then wire the services to a
 All endpoints accept and return JSON. Prefix defaults to `/api/referral`.
 
 ### `POST /click`
-Called by the landing page when a user arrives.
+Called by the landing page when a user arrives. Returns a short-lived,
+signed `token` (proof this click is real and unexpired) alongside
+`click_id` — the token is what recovery reads locally off the Android
+referrer param / iOS clipboard payload, and what `/claim` later verifies.
+See [docs/decisions.md #22](../../docs/decisions.md).
 
 ```jsonc
 // request
@@ -54,51 +58,56 @@ Called by the landing page when a user arrives.
   "screen_height": 844, "pixel_ratio": 3, "timezone": "Africa/Lagos",
   "language": "en-NG", "platform": "iPhone", "referrer": "https://wa.me/..." } }
 // response
-{ "success": true, "click_id": "uuid-v4" }
+{ "success": true, "click_id": "uuid-v4", "token": "uuid-v4.1755000000.<hmac-hex>" }
 ```
 
 The server records the IP from the request; clients never send it.
 
 ### `POST /match`
-Called by the mobile app on first launch — either the probabilistic
-fingerprint path (iOS, or Android when the Install Referrer is empty), or
-the deterministic redeem path (Android install referrer, iOS clipboard —
-both already know their `click_id`, embedded by the landing page at click
-time, so scoring is skipped entirely in favor of a direct lookup + lock). A
-successful match is **locked to the device** and cannot be returned again.
+Called by the mobile app on first launch — the probabilistic fingerprint
+path (iOS, or Android when the Install Referrer is empty). Android's
+primary path and iOS's clipboard tier don't call this at all — both
+already have a token from `/click`, read locally, so there's nothing to
+redeem here (see [docs/decisions.md #22](../../docs/decisions.md)). A
+successful match is **locked to the device** and cannot be returned again,
+and the response carries a signed `token` (same shape as `/click`'s) so
+`/claim` can verify it.
 
 ```jsonc
-// request — probabilistic (fingerprint)
+// request
 { "device_id": "…", "platform": "ios",
   "fingerprint": { "device_model": "iPhone14,5", "screen_width": 390,
     "screen_height": 844, "timezone": "Africa/Lagos", "language": "en-NG" } }
-// request — deterministic (click_id already known)
-{ "device_id": "…", "platform": "android",
-  "click_id": "uuid-v4-from-/click", "method": "install_referrer" }
 // response (match)
 { "matched": true, "referral_code": "1234", "click_id": "uuid-v4",
-  "confidence": 92.5, "match_method": "fingerprint" }
+  "token": "uuid-v4.1755000000.<hmac-hex>", "confidence": 92.5, "match_method": "fingerprint" }
 // response (no match)
 { "matched": false, "referral_code": null }
 ```
 
 ### `POST /claim`
 Called after a successful match + signup. One conversion per device, ever.
-`click_id` is the entire proof this request is legitimate — it must
-reference a click already locked (by `/match`, deterministic or
-probabilistic) to this exact `device_id` and `referral_code`; `method` and
-`confidence` are **not** accepted here at all, they're read from what
-`/match` already recorded on the click row. A `click_id` that doesn't
-reference a matching lock is rejected with `unverified_claim` (403) — see
-[docs/decisions.md #21](../../docs/decisions.md).
+`token` is the entire proof this request is legitimate — the server
+verifies its signature and expiry, then either confirms it's already
+locked to this `device_id` (fingerprint path) or locks it right there, for
+the first time (deterministic path — Android referrer, iOS clipboard,
+neither of which ever called `/match`). There's no `referral_code` or
+`click_id` field at all: both are derived from the click the verified
+token references, never trusted from the request. `method` is only read
+when the click hasn't been locked yet — a labeling detail, not a security
+check either way. An invalid, forged, expired, or
+already-claimed-by-a-different-device token is rejected with
+`unverified_claim` (403) — see
+[docs/decisions.md #21/#22](../../docs/decisions.md).
 
 ```jsonc
 // request
-{ "referral_code": "1234", "device_id": "…", "platform": "android",
-  "click_id": "uuid-v4-from-/match", "user_id": "new-user-id" }
+{ "device_id": "…", "platform": "android",
+  "token": "uuid-v4.1755000000.<hmac-hex>", "method": "install_referrer",
+  "user_id": "new-user-id" }
 // response
 { "success": true, "reward": { "type": "credit", "amount": 500 } }
-// response (no matching lock for this click_id/device/code)
+// response (token invalid, expired, or locked to a different device)
 { "success": false, "error": "unverified_claim" }
 ```
 
@@ -136,6 +145,11 @@ credit there) is specifically what keeps that from failing the match outright
 
 Everything is set in `config/referral.php`. Key hooks:
 
+- **`click_token_secret`** (`REFERRAL_CLICK_TOKEN_SECRET` env var) —
+  required, not optional. Signs every click token; generate one with
+  `openssl rand -hex 32`. `/click` and `/match` throw a clear error if this
+  is unset when they actually need it, rather than silently minting tokens
+  no one can ever verify.
 - **`code_validator`** — a callable `fn(string $code): bool` or a class with
   `validate(string $code): bool`. Referral codes live in *your* app, so wire
   this up in production; unset, any non-empty code is accepted.
