@@ -6,19 +6,19 @@ const NOW = Date.parse('2026-08-14T12:00:00Z');
 const NOW_SECONDS = NOW / 1000;
 const WINDOW = 172800; // 48h, matching the backend's default match window
 
-test('parses a well-formed, fresh payload (no click_id)', () => {
+test('parses a well-formed, fresh payload (no token)', () => {
   const raw = `sparkle_ref:v1:ABC123:${NOW_SECONDS}`;
   const result = parseClipboardReferralPayload(raw, WINDOW, NOW);
-  assert.deepEqual(result, { code: 'ABC123', issuedAt: NOW_SECONDS, clickId: null });
+  assert.deepEqual(result, { code: 'ABC123', issuedAt: NOW_SECONDS, token: null });
 });
 
-test('parses a well-formed payload with a click_id', () => {
-  const raw = `sparkle_ref:v1:ABC123:${NOW_SECONDS}:a1b2c3d4-e5f6-7890-abcd-ef1234567890`;
+test('parses a well-formed payload with a token', () => {
+  const raw = `sparkle_ref:v1:ABC123:${NOW_SECONDS}:click-id.1755000000.deadbeef`;
   const result = parseClipboardReferralPayload(raw, WINDOW, NOW);
   assert.deepEqual(result, {
     code: 'ABC123',
     issuedAt: NOW_SECONDS,
-    clickId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+    token: 'click-id.1755000000.deadbeef',
   });
 });
 
@@ -62,11 +62,13 @@ test('a referral code itself may contain colons without breaking parsing', () =>
   const raw = `sparkle_ref:v1:AB:C123:${NOW_SECONDS}`;
   const result = parseClipboardReferralPayload(raw, WINDOW, NOW);
   assert.equal(result?.code, 'AB:C123');
-  assert.equal(result?.clickId, null);
+  assert.equal(result?.token, null);
 });
 
-test('a colon-containing code and a click_id together still parse correctly', () => {
-  const raw = `sparkle_ref:v1:AB:C123:${NOW_SECONDS}:some-click-id`;
+test('a colon-containing code and a dot-delimited token together still parse correctly', () => {
+  // The token itself is `.`-delimited (see support/clickToken.ts on the
+  // backend) — confirms that never collides with this format's `:` delimiter.
+  const raw = `sparkle_ref:v1:AB:C123:${NOW_SECONDS}:click-id.1755000000.deadbeef`;
   const result = parseClipboardReferralPayload(raw, WINDOW, NOW);
-  assert.deepEqual(result, { code: 'AB:C123', issuedAt: NOW_SECONDS, clickId: 'some-click-id' });
+  assert.deepEqual(result, { code: 'AB:C123', issuedAt: NOW_SECONDS, token: 'click-id.1755000000.deadbeef' });
 });

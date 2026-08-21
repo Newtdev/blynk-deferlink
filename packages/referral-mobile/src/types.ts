@@ -44,13 +44,14 @@ export interface DeviceFingerprint {
 export interface MatchResponse {
   matched: boolean;
   referral_code: string | null;
-  /**
-   * The click this match locked, when it matched — required to /claim
-   * afterward, since /claim now verifies the click is actually locked to
-   * this device instead of trusting the claim request alone. See
-   * docs/decisions.md #21.
-   */
   click_id?: string;
+  /**
+   * Signed proof this click is real and unexpired — required to /claim
+   * afterward, since /claim now verifies it instead of trusting the claim
+   * request alone. Purely opaque to this SDK: never decoded, just carried
+   * through to /claim. See docs/decisions.md #21/#22.
+   */
+  token?: string;
   confidence?: number;
   match_method?: MatchMethod;
 }
@@ -62,16 +63,16 @@ export interface ClaimResult {
 }
 
 /**
- * The result of one recovery attempt, however it happened. `clickId` is
+ * The result of one recovery attempt, however it happened. `token` is
  * required to /claim afterward (see MatchResponse) — a `code` with no
- * `clickId` can never actually be claimed, so ReferralService treats that
+ * `token` can never actually be claimed, so ReferralService treats that
  * combination as equivalent to no code at all rather than a partial result.
  */
 export interface RecoveryOutcome {
   code: string | null;
   method: MatchMethod | null;
   confidence: number | null;
-  clickId: string | null;
+  token: string | null;
 }
 
 export interface ReferralResult {
@@ -84,17 +85,17 @@ export interface ReferralResult {
    * Records the conversion after signup. Claims whatever `code` this same
    * hook call recovered — there's no way to claim a code recovered in an
    * earlier session anymore, even if the app stored it itself: /claim now
-   * requires a `click_id` referencing a click actually locked server-side
-   * (see docs/decisions.md #21), and the SDK persists nothing to disk, so
-   * a fresh session has no legitimate click_id to offer for anything it
-   * didn't just recover itself.
+   * requires a signed `token` proving a click was actually made (see
+   * docs/decisions.md #21/#22), and the SDK persists nothing to disk, so a
+   * fresh session has no legitimate token to offer for anything it didn't
+   * just recover itself.
    */
   claim: (userId: string) => Promise<ClaimResult>;
   /**
    * Wire this to `<ReferralPasteButton onCode={onClipboardCode} />` on iOS
    * — applies a deterministically-recovered code, overriding whatever the
-   * automatic fingerprint path already found. `clickId` comes straight
-   * from the same clipboard payload; pass it through unchanged.
+   * automatic fingerprint path already found. `token` comes straight from
+   * the same clipboard payload; pass it through unchanged.
    */
-  onClipboardCode: (code: string, clickId: string | null) => void;
+  onClipboardCode: (code: string, token: string | null) => void;
 }

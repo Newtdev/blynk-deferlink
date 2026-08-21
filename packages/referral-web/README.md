@@ -82,16 +82,16 @@ function MyLanding({ code }: { code: string }) {
   const { waitForClick, error } = useReferralClick(code);
 
   const goToStore = async () => {
-    // Wait for click registration before building the store URL — click_id
-    // backs the deterministic recovery channels (Android's referrer param;
-    // pass it to writeClipboardReferral too on iOS), and /claim now
-    // requires it. Resolves to null (never hangs) if registration hasn't
-    // finished — the redirect still works, just without that channel's
-    // proof, falling back to fingerprint matching same as always. See
-    // docs/decisions.md #21. `<ReferralLanding>` already does this —
-    // replicate it if you're not using that component.
-    const clickId = await waitForClick();
-    window.location.href = getStoreUrl(platform, code, config, clickId);
+    // Wait for click registration before building the store URL — the
+    // signed token backs the deterministic recovery channels (Android's
+    // referrer param; pass it to writeClipboardReferral too on iOS), and
+    // /claim now requires it. Resolves to null (never hangs) if
+    // registration hasn't finished — the redirect still works, just
+    // without that channel's proof, falling back to fingerprint matching
+    // same as always. See docs/decisions.md #21/#22. `<ReferralLanding>`
+    // already does this — replicate it if you're not using that component.
+    const token = await waitForClick();
+    window.location.href = getStoreUrl(platform, code, config, token);
   };
   // build your own layout, call goToStore() from your CTA's onClick
   // (with e.preventDefault() if it's a real <a> — see StoreButton.tsx for

@@ -943,8 +943,47 @@ probabilistic click → match → claim flow, and three fraud rejections
 (fully fabricated token, tampered token, and a second device attempting to
 claim a token whose click was already locked to the first).
 
-**Client-side implementation** (web + mobile SDKs) follows in the
-corresponding PR — see that PR's description for the web/mobile specifics
-(embedding `token` instead of `click_id`, Android's `recoverAndroid()`
-returning immediately on a local referrer read with no network call,
-`ReferralService.applyClipboardCode()` reverting to synchronous).
+**Client-side implementation (web + mobile SDKs).** This amends the
+client-side work from #21 — that PR's redeem-round-trip client code never
+merged, so there's no history to unwind, just the corrected version:
+
+- `@sparkle/referral-web`'s `getStoreUrl()` embeds `token` (not `click_id`)
+  in the Android referrer param once click registration resolves;
+  `writeClipboardReferral()` embeds it in the clipboard payload the same
+  way. `useReferralClick()`'s `waitForClick()` now resolves the token.
+  `ReferralLanding`'s await-before-redirect logic and `StoreButton`'s
+  `e.preventDefault()` fix (needed so an async `onClick` handler actually
+  gets to finish before the anchor's own `href` navigates — see #21's
+  original writeup) are unaffected by this pivot and carry over unchanged.
+- `@sparkle/referral-mobile`'s `platform/android.ts`: `recoverAndroid()`
+  now returns immediately once the Install Referrer yields a code + token
+  — no network call, no callback, full stop. Only falls through to
+  fingerprint matching when the referrer is empty or has no token (older
+  web SDK version, sideload). This is the concrete fix for the problem
+  this decision exists to correct: Android recovery is exactly as fast and
+  offline-capable as it always was.
+- The clipboard payload format's optional trailing field is now the
+  token (still `.`-delimited internally, confirmed not to collide with the
+  clipboard payload's own `:` delimiter — see
+  `clipboardPayload.test.ts`'s combined test case). `ReferralPasteButton`'s
+  `onCode` and `useReferralCode()`'s `onClipboardCode` both carry `token`
+  through instead of `click_id`.
+- `ReferralService.applyClipboardCode()` is synchronous again — no network
+  call, just applies the parsed code + token directly, restoring the
+  exact behavior it had before #21 ever touched it. `recover()`'s
+  Android/iOS branches no longer need a `redeemDeterministic` callback at
+  all, since nothing is redeemed at recovery time anymore.
+- `claim()`'s `code?: string` override parameter is still gone (per #21 —
+  that reasoning didn't change): there's no legitimate way to claim a code
+  recovered in an *earlier* session, since doing so would need a token
+  this session has no way to supply. The "a manually-typed code can't go
+  through this SDK's `claim()`" consequence from #21 also still holds, for
+  the same reason.
+
+Verified the same way as the backend half: a wire-format check (the
+built `getStoreUrl()`'s referrer param, round-tripped through
+`URLSearchParams` the way `android.ts` parses it, including the token's
+internal dots surviving intact) and a full mock-backend E2E using the
+actual request shapes `api.ts` sends — a deterministic click → claim flow
+that never calls `/match`, a probabilistic click → match → claim flow, and
+the fraud-rejection cases from the backend PR.

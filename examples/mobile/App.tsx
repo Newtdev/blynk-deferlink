@@ -127,9 +127,9 @@ function Screen() {
           section for the icon-only/custom-copy alternative. */}
       <Text style={styles.step}>Paste referral code (iOS clipboard handoff):</Text>
       <ReferralPasteButton
-        onCode={(c, clickId) => {
-          onClipboardCode(c, clickId);
-          append(`clipboard paste → ${c}${clickId ? '' : ' (no click_id — will fail to redeem)'}`);
+        onCode={(c, token) => {
+          onClipboardCode(c, token);
+          append(`clipboard paste → ${c}${token ? '' : ' (no token — will fail to claim)'}`);
         }}
         style={styles.pasteBtn}
         pasteForegroundColor="#FFFFFF"

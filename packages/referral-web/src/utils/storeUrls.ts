@@ -19,26 +19,27 @@ export function getStoreUrl(
   code: string,
   config: ReferralConfig,
   /**
-   * The click this redirect is for, if registration completed in time.
-   * Embedded into the referrer param so the app can redeem it deterministically
-   * via /match instead of trusting the code alone — /claim now requires a
-   * locked click, and this is how Android's Install Referrer path gets one.
-   * Omit (or pass null) when registration hasn't resolved yet — the app falls
-   * back to fingerprint matching exactly like it always has for a missing
-   * click_id, so this is additive, not required, for the redirect itself. See
-   * docs/decisions.md #21.
+   * Signed proof the click behind this redirect is real, if registration
+   * completed in time — embedded into the referrer param, read purely
+   * locally by the app (no network call), and only sent back to the
+   * server once, at /claim. /claim now requires it — this is how
+   * Android's Install Referrer path gets one, for free, with no redeem
+   * round-trip. Omit (or pass null) when registration hasn't resolved
+   * yet — the app falls back to fingerprint matching exactly like it
+   * always has for a missing token, so this is additive, not required,
+   * for the redirect itself. See docs/decisions.md #21/#22.
    */
-  clickId?: string | null,
+  token?: string | null,
 ): string {
   if (platform === 'android') {
     const utm = config.utmSource ?? 'referral';
-    // URLSearchParams (not a template literal) so `code`/`clickId` are
+    // URLSearchParams (not a template literal) so `code`/`token` are
     // correctly escaped inside the referrer string itself — this whole
     // string gets parsed again as its own query string by the Play Install
     // Referrer Library on the app side, so an unescaped `&` or `=` inside a
     // value would silently corrupt that second parse.
     const referrerParams = new URLSearchParams({ utm_source: utm, code });
-    if (clickId) referrerParams.set('click_id', clickId);
+    if (token) referrerParams.set('token', token);
     const base = config.androidStoreUrl
       ? new URL(config.androidStoreUrl)
       : new URL(`https://play.google.com/store/apps/details?id=${config.androidPackage}`);

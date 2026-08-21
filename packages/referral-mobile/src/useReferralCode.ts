@@ -14,8 +14,8 @@ import type { ClaimResult, MatchMethod, ReferralResult } from './types';
  * rate-limited per device (default 5/day) — calling this unconditionally
  * on every app launch will burn through that budget on routine opens.
  * `ReferralResult.claim` can only claim what *this* mount's own recovery
- * found — /claim now requires a server-verified click lock (see
- * docs/decisions.md #21), so there's no way to claim a code the app
+ * found — /claim now requires a signed proof the click was real (see
+ * docs/decisions.md #21/#22), so there's no way to claim a code the app
  * recovered and stored itself in an earlier session anymore.
  */
 export function useReferralCode(): ReferralResult {
@@ -55,13 +55,13 @@ export function useReferralCode(): ReferralResult {
   const claim = useCallback((userId: string): Promise<ClaimResult> => service.claim(userId), [service]);
 
   const onClipboardCode = useCallback(
-    (clipboardCode: string, clickId: string | null) => {
-      (async () => {
-        const result = await service.applyClipboardCode(clipboardCode, clickId);
-        setCode(result.code);
-        setMethod(result.method);
-        setConfidence(result.confidence);
-      })();
+    (clipboardCode: string, token: string | null) => {
+      // Synchronous — applyClipboardCode is a pure local read now, no
+      // network round trip (see docs/decisions.md #22).
+      const result = service.applyClipboardCode(clipboardCode, token);
+      setCode(result.code);
+      setMethod(result.method);
+      setConfidence(result.confidence);
     },
     [service],
   );

@@ -10,14 +10,14 @@ export interface UseReferralClickResult {
   /**
    * Resolves once click registration settles, success or failure — never
    * rejects, so callers can await it without their own try/catch. Waits for
-   * the actual in-flight request rather than reading `clickId` state, which
-   * might not have committed yet if this is called synchronously from a tap
-   * handler or a countdown timer that fires before the network round trip
+   * the actual in-flight request rather than reading state, which might not
+   * have committed yet if this is called synchronously from a tap handler
+   * or a countdown timer that fires before the network round trip
    * completes. Resolves to null if the click never registered (network
    * failure, invalid code, or no referralCode at all) rather than blocking
    * forever — a store redirect must always be able to proceed either way;
-   * click_id is what backs the deterministic recovery channels, not a
-   * precondition for the redirect itself. See docs/decisions.md #21.
+   * the token is what backs the deterministic recovery channels, not a
+   * precondition for the redirect itself. See docs/decisions.md #21/#22.
    */
   waitForClick: () => Promise<string | null>;
 }
@@ -36,7 +36,7 @@ export function useReferralClick(referralCode: string): UseReferralClickResult {
   const sent = useRef(false);
   // Defaults to an already-resolved null so a call with no referralCode (the
   // effect below never fires, nothing ever registers) doesn't hang forever.
-  const clickPromiseRef = useRef<Promise<string | null>>(Promise.resolve(null));
+  const tokenPromiseRef = useRef<Promise<string | null>>(Promise.resolve(null));
 
   useEffect(() => {
     if (!referralCode || sent.current) return;
@@ -45,13 +45,13 @@ export function useReferralClick(referralCode: string): UseReferralClickResult {
 
     const controller = new AbortController();
 
-    let resolvePromise!: (id: string | null) => void;
-    clickPromiseRef.current = new Promise<string | null>((resolve) => {
+    let resolvePromise!: (token: string | null) => void;
+    tokenPromiseRef.current = new Promise<string | null>((resolve) => {
       resolvePromise = resolve;
     });
 
     (async () => {
-      let result: string | null = null;
+      let token: string | null = null;
       try {
         const res = await fetch(`${config.apiEndpoint}/referral/click`, {
           method: 'POST',
@@ -65,7 +65,7 @@ export function useReferralClick(referralCode: string): UseReferralClickResult {
         const data: ClickResponse = await res.json();
         if (data.success && data.click_id) {
           setClickId(data.click_id);
-          result = data.click_id;
+          token = data.token ?? null;
         } else if (data.error) {
           setError(new Error(data.error));
         }
@@ -75,7 +75,7 @@ export function useReferralClick(referralCode: string): UseReferralClickResult {
         }
       } finally {
         setLoading(false);
-        resolvePromise(result);
+        resolvePromise(token);
       }
     })();
 
@@ -84,7 +84,7 @@ export function useReferralClick(referralCode: string): UseReferralClickResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [referralCode]);
 
-  const waitForClick = useCallback(() => clickPromiseRef.current, []);
+  const waitForClick = useCallback(() => tokenPromiseRef.current, []);
 
   return { clickId, loading, error, waitForClick };
 }
