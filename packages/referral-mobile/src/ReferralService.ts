@@ -6,15 +6,11 @@ import { recoverIos } from './platform/ios';
 import type {
   ClaimResult,
   DeviceFingerprint,
-  MatchMethod,
   ReferralConfig,
+  RecoveryOutcome,
 } from './types';
 
-export interface RecoveryOutcome {
-  code: string | null;
-  method: MatchMethod | null;
-  confidence: number | null;
-}
+const NO_CODE: RecoveryOutcome = { code: null, method: null, confidence: null, token: null };
 
 /**
  * Coordinates one-time referral recovery.
@@ -34,6 +30,16 @@ export interface RecoveryOutcome {
  * before wiring this in anywhere else. Duplicate-signup protection is
  * unaffected either way: it's entirely server-side (device_id is unique
  * per conversion), not something client persistence was ever providing.
+ *
+ * Every recovered `code` now comes with a `token` proving the click is
+ * real — /claim requires and verifies it (see docs/decisions.md #21/#22).
+ * A `code` without a usable `token` is treated as no code at all
+ * throughout this class, since it could never actually be claimed.
+ * Recovering the token costs nothing extra for the deterministic paths
+ * (Android Install Referrer, iOS clipboard): it rides along in the same
+ * referrer param / clipboard payload the code already came from, read
+ * purely locally, no network call — see platform/android.ts and
+ * platform/clipboardPayload.ts.
  */
 export class ReferralService {
   private readonly api;
@@ -49,30 +55,34 @@ export class ReferralService {
     if (this.lastRecovery) return this.lastRecovery;
 
     const fingerprint = await collectFingerprint();
-    let confidence: number | null = null;
 
-    const matchViaFingerprint = async (
-      fp: DeviceFingerprint,
-    ): Promise<string | null> => {
+    const matchViaFingerprint = async (fp: DeviceFingerprint): Promise<RecoveryOutcome> => {
       try {
         const res = await this.api.match(fp);
-        confidence = res.confidence ?? null;
-        return res.matched ? res.referral_code : null;
+        if (!res.matched || !res.referral_code || !res.token) return NO_CODE;
+        return {
+          code: res.referral_code,
+          method: 'fingerprint',
+          confidence: res.confidence ?? null,
+          token: res.token,
+        };
       } catch {
-        return null;
+        return NO_CODE;
       }
     };
 
-    const outcome =
+    // Android's Install Referrer is read purely locally (see
+    // platform/android.ts) — no callback needed here for it anymore, unlike
+    // the now-superseded design that redeemed it via a /match round-trip.
+    const result =
       Platform.OS === 'android'
         ? await recoverAndroid(fingerprint, matchViaFingerprint)
         : await recoverIos(fingerprint, matchViaFingerprint);
 
-    const result: RecoveryOutcome = { code: outcome.code, method: outcome.method, confidence };
     this.lastRecovery = result;
 
-    if (outcome.code) {
-      this.config.onCodeFound?.(outcome.code, outcome.method);
+    if (result.code) {
+      this.config.onCodeFound?.(result.code, result.method!);
     } else {
       this.config.onNoCode?.();
     }
@@ -81,48 +91,57 @@ export class ReferralService {
   }
 
   /**
-   * Records the conversion after signup. `code` defaults to whatever this
-   * session's own `recover()` call found — the common case, needing no
-   * arguments. Pass it explicitly only if the app is claiming a code it
-   * recovered and stored itself in an *earlier* session (the SDK doesn't
-   * persist it — see the class doc above); in that case `method` isn't
-   * known either and falls back to `'fingerprint'` as a reasonable guess
-   * rather than a hard requirement to also thread it through.
+   * Records the conversion after signup. Claims whatever this session's own
+   * `recover()` (or `applyClipboardCode()`) found — there's no override
+   * parameter for a code recovered elsewhere anymore, because `/claim` now
+   * requires a `token` proving a click actually happened (see
+   * docs/decisions.md #21/#22), and the SDK persists nothing that could
+   * supply one for a code it didn't just recover itself.
    *
    * Duplicate-claim detection is entirely server-side (device_id is unique
    * per conversion — see referral_conversions' schema), so this doesn't
    * track "already claimed" locally; a second call just gets that answer
    * back from the API instead of guessing at it beforehand.
    */
-  async claim(userId: string, code?: string): Promise<ClaimResult> {
-    const resolvedCode = code ?? this.lastRecovery?.code ?? null;
-    if (!resolvedCode) {
+  async claim(userId: string): Promise<ClaimResult> {
+    if (!this.lastRecovery?.code || !this.lastRecovery.token) {
       return { success: false, error: 'no_code' };
     }
 
     const fingerprint = await collectFingerprint();
     return this.api.claim({
-      referralCode: resolvedCode,
       deviceId: fingerprint.device_id,
       platform: fingerprint.platform,
-      method: this.lastRecovery?.method ?? 'fingerprint',
+      token: this.lastRecovery.token,
+      method: this.lastRecovery.method ?? undefined,
       userId,
-      confidence: this.lastRecovery?.confidence ?? null,
     });
   }
 
   /**
    * Applies a code recovered deterministically via the clipboard tier
    * (ReferralPasteButton), overriding whatever the automatic fingerprint
-   * path already found — clipboard recovery is exact-match, strictly more
-   * trustworthy than a probabilistic score. Unlike `recover()`, this is
-   * user-triggered (a tap on the paste control), not automatic, so it can
-   * fire at any point after mount, not just once on launch.
+   * path already found. Unlike `recover()`, this is user-triggered (a tap
+   * on the paste control), not automatic, so it can fire at any point after
+   * mount, not just once on launch.
+   *
+   * Purely local, same as the clipboard read itself — no network call.
+   * `token`, from the same clipboard payload, is carried straight through
+   * to `/claim` later, not verified or redeemed here (see
+   * docs/decisions.md #22). A missing `token` (an older payload written
+   * before this SDK version, or a click registration that didn't resolve
+   * in time) surfaces as no code recovered — a code the app could display
+   * but never successfully claim isn't a useful result to hand back.
    */
-  applyClipboardCode(code: string): RecoveryOutcome {
-    const result: RecoveryOutcome = { code, method: 'clipboard', confidence: null };
+  applyClipboardCode(code: string, token: string | null): RecoveryOutcome {
+    const result: RecoveryOutcome = token ? { code, method: 'clipboard', confidence: null, token } : NO_CODE;
+
     this.lastRecovery = result;
-    this.config.onCodeFound?.(code, 'clipboard');
+    if (result.code) {
+      this.config.onCodeFound?.(result.code, 'clipboard');
+    } else {
+      this.config.onNoCode?.();
+    }
     return result;
   }
 

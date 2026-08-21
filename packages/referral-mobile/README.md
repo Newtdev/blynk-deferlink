@@ -230,13 +230,26 @@ is invented.
 Mount useReferralCode() → recover()
 │
 ├─ Android:
-│   ├─ Read Install Referrer → parse code   → method: install_referrer
-│   └─ Empty referrer → fingerprint match    → method: fingerprint
+│   └─ Read Install Referrer → parse code + token — fully local, no network
+│         ├─ code + token present → method: install_referrer
+│         └─ no token / empty referrer / sideload → fingerprint match (POST /referral/match) → method: fingerprint
 │
 └─ iOS:
     ├─ Automatic: fingerprint match (POST /referral/match) → method: fingerprint
-    └─ User taps <ReferralPasteButton>, if rendered → method: clipboard (overrides the above)
+    └─ User taps <ReferralPasteButton>, if rendered → parse code + token from
+          clipboard — fully local, no network → method: clipboard (overrides the above)
 ```
+
+Every path ends in a `token` — a signed proof the click is real — attached
+to the recovered code, since `/claim` now verifies it before paying out
+anything (see [docs/decisions.md #21/#22](../../docs/decisions.md)). A
+code with no `token` behind it is treated as no code at all: `recover()`
+and `onClipboardCode()` both return `code: null` rather than a code the
+app could display but `claim()` could never actually submit. Getting that
+token costs nothing extra for Android or the clipboard tier — it rides
+along in the same referrer param / clipboard payload the code already
+comes from, so recovery there stays exactly as fast and offline-capable as
+it always was; only `/claim`, once, ever needs the network to verify it.
 
 Recovery runs once per mount, cached in memory for the rest of the
 session — mounting the hook on several screens within the same session is
@@ -284,33 +297,39 @@ entirely server-side) — it only ever protected against wasting the
 match-rate-limit budget, and that's now on your app to manage if your
 mount point doesn't already guarantee it naturally.
 
-### Claiming a code in a later session
+### Claiming across sessions isn't possible anymore
 
-The common case needs none of this — call `claim(userId)` right after
-`useReferralCode()` recovers a code, in the same session, and it's picked up
-automatically. If your signup flow can span sessions (the user closes the
-app before finishing), store the code yourself when it's first found and
-pass it to `claim()` explicitly later:
+Call `claim(userId)` right after `useReferralCode()` recovers a code, in the
+same session — that's the only case `claim()` supports now. There's no
+`code` override parameter anymore: `/claim` requires a signed `token`
+proving a real click happened (see
+[docs/decisions.md #21/#22](../../docs/decisions.md)), and this SDK
+persists nothing that could supply a valid one for a code recovered in an
+earlier session, even if your app stored the code string itself. Passing a
+self-stored code straight to the backend without a real token behind it
+would just get rejected with `unverified_claim` — there's no legitimate way
+around going through recovery again.
 
-```tsx
-const { code, claim } = useReferralCode();
-
-// When first recovered — persist it your own way if signup might not
-// finish in this session:
-useEffect(() => {
-  if (code) myOwnStorage.set('referralCode', code);
-}, [code]);
-
-// Later, possibly in a different session:
-const savedCode = myOwnStorage.get('referralCode');
-if (savedCode) await claim(userId, savedCode);
-```
+If your signup flow can genuinely span app restarts, call
+`useReferralCode()` (or mount it) again when the user resumes — recovery
+itself is safe to re-run (it's rate-limited server-side, not blocked
+client-side), it just costs another `/match` call against that budget.
 
 ## Manual fallback
 
 If a match fails (common when an iOS user switches networks between click and
 install), `code` is `null`. Keep the referral field editable so the user can
 type the code from the landing page by hand.
+
+**A manually-typed code can't go through this SDK's `claim()`.** `/claim`
+requires a signed `token` proving a real click happened (see
+[docs/decisions.md #21/#22](../../docs/decisions.md)) — a code the user typed in
+by hand was never locked to anything, so there's nothing to submit. If you
+need to honor a manually-entered code anyway, that has to be a separate path
+in your own backend (e.g. crediting the referrer directly, possibly with
+lighter-weight review than the automatic flow gets) — this SDK doesn't
+provide one, since it can't verify a typed code the way it verifies a
+recovered one.
 
 ## Config reference
 

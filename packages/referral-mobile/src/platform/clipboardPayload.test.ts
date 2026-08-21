@@ -6,10 +6,20 @@ const NOW = Date.parse('2026-08-14T12:00:00Z');
 const NOW_SECONDS = NOW / 1000;
 const WINDOW = 172800; // 48h, matching the backend's default match window
 
-test('parses a well-formed, fresh payload', () => {
+test('parses a well-formed, fresh payload (no token)', () => {
   const raw = `sparkle_ref:v1:ABC123:${NOW_SECONDS}`;
   const result = parseClipboardReferralPayload(raw, WINDOW, NOW);
-  assert.deepEqual(result, { code: 'ABC123', issuedAt: NOW_SECONDS });
+  assert.deepEqual(result, { code: 'ABC123', issuedAt: NOW_SECONDS, token: null });
+});
+
+test('parses a well-formed payload with a token', () => {
+  const raw = `sparkle_ref:v1:ABC123:${NOW_SECONDS}:click-id.1755000000.deadbeef`;
+  const result = parseClipboardReferralPayload(raw, WINDOW, NOW);
+  assert.deepEqual(result, {
+    code: 'ABC123',
+    issuedAt: NOW_SECONDS,
+    token: 'click-id.1755000000.deadbeef',
+  });
 });
 
 test('rejects a payload without the expected prefix', () => {
@@ -52,4 +62,13 @@ test('a referral code itself may contain colons without breaking parsing', () =>
   const raw = `sparkle_ref:v1:AB:C123:${NOW_SECONDS}`;
   const result = parseClipboardReferralPayload(raw, WINDOW, NOW);
   assert.equal(result?.code, 'AB:C123');
+  assert.equal(result?.token, null);
+});
+
+test('a colon-containing code and a dot-delimited token together still parse correctly', () => {
+  // The token itself is `.`-delimited (see support/clickToken.ts on the
+  // backend) — confirms that never collides with this format's `:` delimiter.
+  const raw = `sparkle_ref:v1:AB:C123:${NOW_SECONDS}:click-id.1755000000.deadbeef`;
+  const result = parseClipboardReferralPayload(raw, WINDOW, NOW);
+  assert.deepEqual(result, { code: 'AB:C123', issuedAt: NOW_SECONDS, token: 'click-id.1755000000.deadbeef' });
 });

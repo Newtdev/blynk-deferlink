@@ -1,12 +1,16 @@
-import type { DeviceFingerprint } from '../types';
+import type { DeviceFingerprint, MatchMethod, RecoveryOutcome } from '../types';
 
 /**
- * Reads the Google Play Install Referrer and extracts the referral code.
- * This is deterministic (~100%) and requires no network — Google hands the
- * `referrer` string set on the store URL directly to the app after install.
- * That reliability is why it's required on Android rather than optional:
- * fingerprint matching is probabilistic (see fingerprintMatcher.ts's scoring
- * and its recency/IP tradeoffs) and install-referrer sidesteps all of it.
+ * Reads the Google Play Install Referrer and extracts the referral code
+ * and its signed token (embedded alongside the code by the web landing
+ * page — see storeUrls.ts). This is deterministic (~100%) and requires no
+ * network — Google hands the `referrer` string set on the store URL
+ * directly to the app after install, and the token is read straight out
+ * of it, not verified or redeemed here. That reliability is why it's
+ * required on Android rather than optional: fingerprint matching is
+ * probabilistic (see fingerprintMatcher.ts's scoring and its recency/IP
+ * tradeoffs) and install-referrer sidesteps all of it — see
+ * docs/decisions.md #22 for why recovery itself never touches the network.
  *
  * Backed by `react-native-play-install-referrer` — a real, published wrapper
  * around Google's Play Install Referrer Library (named export
@@ -23,7 +27,7 @@ import type { DeviceFingerprint } from '../types';
  * a setup mistake worth failing loudly on rather than silently degrading to
  * the weaker fingerprint path.
  */
-export async function readInstallReferrer(): Promise<string | null> {
+export async function readInstallReferrer(): Promise<{ code: string; token: string | null } | null> {
   let PlayInstallReferrer: {
     getInstallReferrerInfo: (
       callback: (
@@ -59,25 +63,35 @@ export async function readInstallReferrer(): Promise<string | null> {
     const referrer = info?.installReferrer ?? '';
     if (!referrer) return null;
 
-    // referrer looks like "utm_source=referral&code=1234"
+    // referrer looks like "utm_source=referral&code=1234&token=uuid.exp.hmac"
     const params = new URLSearchParams(referrer);
     const code = params.get('code');
-    return code && code.trim() !== '' ? code : null;
+    if (!code || code.trim() === '') return null;
+
+    const rawToken = params.get('token');
+    const token = rawToken && rawToken.trim() !== '' ? rawToken : null;
+    return { code, token };
   } catch {
     return null;
   }
 }
 
+const METHOD: MatchMethod = 'install_referrer';
+
 export async function recoverAndroid(
   fingerprint: DeviceFingerprint,
-  matchViaFingerprint: (fp: DeviceFingerprint) => Promise<string | null>,
-): Promise<{ code: string | null; method: 'install_referrer' | 'fingerprint' }> {
-  const referrerCode = await readInstallReferrer();
-  if (referrerCode) {
-    return { code: referrerCode, method: 'install_referrer' };
+  matchViaFingerprint: (fp: DeviceFingerprint) => Promise<RecoveryOutcome>,
+): Promise<RecoveryOutcome> {
+  const referrer = await readInstallReferrer();
+
+  // No network call here at all — the token is carried, not verified. A
+  // code with no token (older web SDK version on the landing page, or a
+  // truncated param) can never be claimed anyway, so it's treated the same
+  // as no code: fall through to fingerprint matching, which can produce a
+  // real one via /match.
+  if (referrer?.code && referrer.token) {
+    return { code: referrer.code, method: METHOD, confidence: null, token: referrer.token };
   }
 
-  // Empty referrer (e.g. sideload, or code wasn't in the store URL) → fall back.
-  const code = await matchViaFingerprint(fingerprint);
-  return { code, method: 'fingerprint' };
+  return matchViaFingerprint(fingerprint);
 }

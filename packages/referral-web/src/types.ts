@@ -64,6 +64,12 @@ export interface ReferralConfig {
 export interface ClickResponse {
   success: boolean;
   click_id?: string;
+  /**
+   * Signed proof this click is real and unexpired — carried through the
+   * Android referrer param / iOS clipboard payload, never decoded here,
+   * only forwarded. /claim verifies it later. See docs/decisions.md #22.
+   */
+  token?: string;
   error?: string;
 }
 

@@ -35,14 +35,19 @@ export function createApi(config: ReferralConfig) {
   const timeout = config.matchTimeoutMs ?? 5000;
 
   return {
-    /** POST /referral/match — fingerprint recovery (iOS + Android fallback). */
+    /**
+     * POST /referral/match — probabilistic fingerprint recovery (iOS, or
+     * Android's fallback when the Install Referrer is empty). Android's
+     * primary path and iOS's clipboard tier never call this at all — both
+     * already have a token, read locally off the referrer/clipboard, with
+     * nothing to redeem until /claim. See docs/decisions.md #22.
+     */
     async match(fingerprint: DeviceFingerprint): Promise<MatchResponse> {
       return postJson<MatchResponse>(
         `${base}/referral/match`,
         {
           device_id: fingerprint.device_id,
           platform: fingerprint.platform,
-          method: 'fingerprint',
           fingerprint: {
             user_agent: '',
             device_model: fingerprint.device_model,
@@ -56,24 +61,30 @@ export function createApi(config: ReferralConfig) {
       );
     },
 
-    /** POST /referral/claim — record the conversion after signup. */
+    /**
+     * POST /referral/claim — record the conversion after signup. `token`
+     * is the entire proof (see support/clickToken.ts on the backend) — the
+     * server verifies it and either confirms an existing lock (fingerprint
+     * path) or makes one for the first time right here (deterministic
+     * path, redeemed for real for the first time at this exact call).
+     * `method` is only read in that second case — a labeling detail, not a
+     * security check either way. See docs/decisions.md #21/#22.
+     */
     async claim(params: {
-      referralCode: string;
       deviceId: string;
       platform: MobilePlatform;
-      method: MatchMethod;
+      token: string;
+      method?: MatchMethod;
       userId: string;
-      confidence?: number | null;
     }): Promise<ClaimResult> {
       return postJson<ClaimResult>(
         `${base}/referral/claim`,
         {
-          referral_code: params.referralCode,
           device_id: params.deviceId,
           platform: params.platform,
+          token: params.token,
           method: params.method,
           user_id: params.userId,
-          confidence: params.confidence ?? undefined,
         },
         timeout,
       );
