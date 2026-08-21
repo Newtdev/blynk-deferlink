@@ -1,122 +1,102 @@
 # Recovery paths
 
 How a referral code survives the gap between a tapped link and a first
-app launch — four recovery paths across two platforms, converging on one
-backend and one claim. This is the detailed version of the flow summarized
-in [`README.md`](README.md#the-flow-these-four-pieces-implement-together).
+app launch. Deterministic and probabilistic recovery are two separate
+mechanisms, not two branches of one path — shown here as two diagrams,
+both starting at the same click and ending at the same claim. This is
+the detailed version of the flow summarized in
+[`README.md`](README.md#the-flow-these-four-pieces-implement-together).
+
+## Deterministic recovery
+
+Android's default path, and iOS's opt-in path — both read a code and
+proof entirely on-device, no network call. Neither touches fingerprint
+matching at all.
 
 ```mermaid
 %%{init: {'theme': 'neutral'}}%%
 flowchart TD
-    A["① Share link tapped"] --> B["② Landing page (referral-web)<br/>POST /click {referral_code, fingerprint}"]
-    B --> C["③ Backend stores click<br/>signs token: click_id.expiry.hmac"]
+    A["Share link tapped"] --> B["Landing page (referral-web)<br/>POST /click"]
+    B --> C["Backend stores click, signs token<br/>click_id.expiry.hmac"]
     C --> D1[Android]
     C --> D2[iOS]
 
     subgraph android [ANDROID]
         D1 --> E1["Token embedded in Play Store referrer param"]
         E1 --> F1["App installed"]
-        F1 --> G1{"Install Referrer<br/>returns code + token?"}
-        G1 -->|"yes · ~100% of real installs"| H1["<b>DETERMINISTIC</b><br/>method: install_referrer<br/>fully local · no network call"]
-        G1 -.->|"no · empty / sideload<br/><b>→ PROBABILISTIC</b>"| M
+        F1 --> G1{"Install Referrer has<br/>code + token?"}
+        G1 -->|yes| H1["<b>method: install_referrer</b><br/>read fully locally, no network call"]
+        G1 -.->|"no"| X1["see Probabilistic diagram"]
     end
 
     subgraph ios [iOS]
         D2 --> E2["Token + code written to clipboard,<br/>right before store redirect"]
         E2 --> F2["App installed"]
-        F2 -.->|"automatic, every launch<br/><b>→ PROBABILISTIC</b>"| M
-        F2 -->|"optional · explicit tap"| G3{"User taps<br/>&lt;ReferralPasteButton&gt;?"}
-        G3 -->|yes| H2["<b>DETERMINISTIC</b><br/>method: clipboard<br/>fully local · overrides match result"]
+        F2 --> G2{"User taps<br/>&lt;ReferralPasteButton&gt;?"}
+        G2 -->|yes| H2["<b>method: clipboard</b><br/>read fully locally, no network call<br/>overrides an automatic match, if tapped"]
+        G2 -.->|"not tapped (default)"| X2["see Probabilistic diagram"]
     end
 
-    M["<b>PROBABILISTIC MATCHING</b><br/>Backend Match Engine — scores fingerprint<br/>vs. recent unmatched clicks<br/>(IP · device · screen · timezone · language · recency)"] --> N{"score ≥ min_confidence<br/>(default 70)?"}
-    N -->|yes| O1["method: fingerprint<br/>click locked to device, atomically"]
-    N -->|no| O2["No match<br/>code: null"]
-
-    H1 --> P["④ code + token ready<br/>(or a manual code, no token, if unmatched)"]
+    H1 --> P["code + token ready"]
     H2 --> P
-    O1 --> P
-    O2 -.->|"manual code entry fallback"| P
+    P --> Q["Pre-fills signup<br/>POST /claim {device_id, token, method}"]
+    Q --> R["Verified → conversion recorded<br/>reward distributed"]
 
-    P --> Q["⑤ Code pre-fills signup"]
-    Q --> R["⑥ POST /claim {device_id, token, method}"]
-    R --> S["Backend verifies signature, expiry, device lock"]
-    S --> T["⑦ Conversion recorded, reward distributed"]
+    classDef ghost fill:transparent,stroke-dasharray: 2 3,color:#888
+    class X1,X2 ghost
+```
 
-    classDef det stroke-width:3px
-    classDef prob stroke-dasharray: 6 3
-    classDef nomatch stroke-dasharray: 1 3
-    class H1,H2 det
-    class M,O1 prob
+## Probabilistic recovery
+
+Reached only when the deterministic path above didn't run or didn't have
+anything to read — a scored guess, backed by the same signed token once
+it succeeds. Both platforms feed the same scoring engine; this is the one
+piece of matching logic that isn't platform-specific at all.
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+flowchart TD
+    A["Share link tapped"] --> B["Landing page (referral-web)<br/>POST /click"]
+    B --> C["Backend stores click, signs token<br/>click_id.expiry.hmac"]
+    C --> D1[Android]
+    C --> D2[iOS]
+
+    subgraph android [ANDROID]
+        D1 --> E1["Install Referrer empty or sideload<br/><i>fallback only — see Deterministic</i>"]
+    end
+
+    subgraph ios [iOS]
+        D2 --> E2["Automatic, every launch, no gesture required<br/><i>iOS's default recovery attempt</i>"]
+    end
+
+    E1 --> M["<b>Match Engine</b><br/>scores fingerprint vs. recent unmatched clicks<br/>IP · device · screen · timezone · language · recency"]
+    E2 --> M
+    M --> N{"score ≥ min_confidence<br/>(default 70)?"}
+    N -->|yes| O1["<b>method: fingerprint</b><br/>click locked to device, atomically"]
+    N -.->|no| O2["No match<br/>code: null — manual entry fallback"]
+
+    O1 --> P["code + token ready<br/>(or a manual code, no token, on no match)"]
+    O2 -.-> P
+    P --> Q["Pre-fills signup<br/>POST /claim {device_id, token, method}"]
+    Q --> R["Verified → conversion recorded<br/>reward distributed"]
+
+    classDef nomatch stroke-dasharray: 2 3
     class O2 nomatch
 ```
 
-Both platforms' fingerprint attempts (Android's fallback when the Install
-Referrer is empty, and iOS's automatic default) feed into the *same*
-`PROBABILISTIC MATCHING` box — that's the entire probabilistic side of
-this diagram, clearly separate from the two `DETERMINISTIC` boxes that
-live inside each platform's own lane. Fingerprint matching is never part
-of the deterministic path on either platform; it's what runs *instead*,
-when the deterministic signal isn't available (Android) or hasn't been
-confirmed yet by a tap (iOS).
+## Reliability
 
-A share link is registered as a click and signed once, for free. Android
-and iOS then recover it through different means — the same
-deterministic/probabilistic split repeats on both, but which one is the
-*default* differs: Android's deterministic path runs automatically, iOS's
-needs an explicit tap. Every path — however the code was recovered —
-converges on the same claim step before a reward is ever paid out.
+- **Deterministic** — Android: ~100% of real installs. iOS: requires an
+  explicit tap, so coverage depends entirely on whether
+  `<ReferralPasteButton>` is rendered and tapped.
+- **Probabilistic** — an observed ~85–90% match rate on iOS, where it's
+  the default; lower priority on Android, where it's a fallback of last
+  resort.
 
-## The four paths
-
-### Android · deterministic · `install_referrer`
-
-The default, automatic path — no user action needed beyond installing the
-app.
-
-- Code + signed token ride in the Play Install Referrer string, set at
-  store-redirect time.
-- Read once on first launch, entirely on-device — no network call to
-  recover it.
-- Reliable near-100% of real installs; only empty on a sideload or a
-  referrer Play strips.
-
-### Android · probabilistic · `fingerprint` (fallback)
-
-Only reached if the Install Referrer comes back empty.
-
-- Same scoring engine as iOS's automatic path — one backend, shared code.
-- Scores IP, device/OS, screen, timezone, language, and click recency
-  against unmatched clicks.
-- Needs ≥ 70/100 to count as a match; the winning click locks to the
-  device atomically.
-
-### iOS · deterministic · `clipboard`
-
-The stronger path, but not automatic — Apple's paste APIs require an
-explicit tap.
-
-- Code + token written to the system clipboard right before the App
-  Store redirect.
-- Only readable from a real user gesture on `<ReferralPasteButton>` — no
-  auto-run.
-- Overrides whatever the automatic fingerprint match already found, if
-  it's tapped.
-
-### iOS · probabilistic · `fingerprint` (default)
-
-iOS's only fully automatic path — Apple exposes nothing
-install-referrer-equivalent.
-
-- Fires on every first launch, no user action required.
-- Safari's UA never exposes device model, so the "device" signal
-  collapses to OS family + version.
-- Accepted trade-off behind an observed ~85–90% iOS match rate.
-
-## The proof that makes both local-only paths possible
+## The proof that makes both deterministic paths possible
 
 Every recovered code carries a signed proof (`click_id.expiry.hmac`),
-minted once at `/click` — this is what lets the two deterministic paths
+minted once at `/click` — this is what lets both deterministic paths
 stay genuinely network-free at recovery time, and what `/claim` verifies
 before any reward is paid out. A code with no valid token behind it
 (including one a user typed in by hand) can reach signup, but can never
