@@ -761,3 +761,106 @@ user reached the store link. The prop is still a single
 `countdownSeconds?: number` — an explicit value overrides both platforms
 uniformly, same escape hatch as before, just not the implicit default
 anymore.
+
+---
+
+## 21. `/claim` required no proof — full trust-boundary redesign — Done
+
+**Problem, found by three independent adversarial reviews of the whole
+repo (mine, plus two outside passes, all cross-verified line-by-line
+against the actual source before acting on anything).** `POST /claim` —
+the endpoint that actually distributes reward money — never verified that
+the claiming device went through a real `/click` + `/match`. It trusted
+`referral_code`, `device_id`, `method`, and `confidence` straight from the
+request body; the only gates were `code_validator` (a no-op by default —
+any non-empty code is accepted) and a check that the device hadn't
+converted before (a client-chosen string, trivially rotated). `/claim` had
+no rate limit at all, in either backend. The reviews' shared failure
+scenario: `POST /claim {"referral_code":"<any known code>",
+"device_id":"<freshly generated>", "platform":"ios",
+"method":"clipboard"}`, repeated with a new `device_id` each call, minted
+an unlimited number of rewards with no real click, match, or install ever
+involved. `matched_device_id`/`matched_at` — written by `lockToDevice` on
+every real match — were never read anywhere else; that was the actual
+smoking gun; the atomic lock `/match` already performs was simply never
+consulted by the endpoint that pays out.
+
+Separately: the Node rate limiter's `SELECT count`-then-`INSERT` (not a
+transaction) let concurrent requests all observe a stale under-the-limit
+count and all pass — a real bug, but secondary to the endpoint with no
+limit at all.
+
+**Decision — reuse the existing atomic lock as proof, not a new signed
+token.** `ClickStore.lockToDevice()` (both backends) is already a correct
+atomic compare-and-swap. Rather than inventing an HMAC/signed-token scheme
+(a new secret to manage, rotate, and keep in sync across two backends),
+`/claim` now requires a `click_id` and verifies the referenced row is
+`matched = true`, `matched_device_id` equals the submitted (hashed, per
+`hash_device_ids`) `device_id`, and `referral_code` matches. A `click_id`
+is a random UUIDv4 the server hands out and never leaks to anyone but the
+device that owns the click — that unguessability, plus the single-use
+atomic lock, *is* the proof.
+
+This meant every recovery path needed to end in a locked click before
+reaching `/claim`, including the two that never called `/match` at all:
+Android's Install Referrer and iOS's clipboard tier. `/match` gained an
+optional deterministic fast-path — when the request carries a `click_id`
+(now embedded alongside the code in both the Play referrer param and the
+clipboard payload), it skips fingerprint scoring entirely and goes
+straight to a lookup + lock, inheriting the same per-device throttle the
+probabilistic path already had. This also makes the previously
+accepted-but-ignored `method` field on `/match`'s schema meaningful for
+the first time, and finally makes decisions.md #11's stated invariant
+("a `referral_conversions` row with a given `click_id` means that click
+was successfully claimed") actually true — `click_id` stops being
+decorative on `/claim` too.
+
+**Implementation.**
+- `referral_clicks` gained `match_method`/`match_confidence` columns,
+  written by `lockToDevice` at lock time — `/claim` reads `method`/
+  `confidence` from this row now, not from the claim request, closing the
+  data-integrity gap alongside the trust-boundary one.
+- Node's `referral_rate_limit_hits` moved from one-row-per-hit to a
+  fixed-window, one-row-per-bucket-per-window counter, upserted atomically
+  (`INSERT ... ON CONFLICT ... DO UPDATE SET count = count + 1 RETURNING
+  count`) — fixes the check-then-act race and incidentally bounds that
+  table's growth. PHP's rate limiter was already atomic (Laravel's
+  cache-backed `RateLimiter::hit`), so this half was Node-only.
+- A `claim` rate-limit bucket now exists in both backends (default
+  10/hour/device) — previously absent entirely.
+- The PHP scoring config (`Config/referral.php`) was separately found to
+  have drifted: it still shipped `ip_match => 40` with no `recency` key at
+  all, silently falling back to `ReferralConfig.php`'s own `recency ?? 15`
+  default and pushing the real ceiling to 115 instead of 100 — a Laravel
+  install running the published config scored differently than Node's
+  already-rebalanced defaults. Fixed to match Node exactly
+  (`ip_match: 25`, `recency: 15`, sums to 100).
+- `referral-sdk-node`'s pinned `drizzle-orm` (`^0.36.0`) had a patched
+  SQL-injection CVE (GHSA-gpj5-g38j-94v9) — not reachable in this codebase
+  (nothing interpolates identifiers), but bumped to `^0.45.2` while it was
+  cheap to do. `drizzle-kit` bumped to `^0.31.10` too; its own moderate
+  advisory has no stable fixed version yet (dev/build-time only, never
+  shipped).
+- `examples/mock-backend/server.js` updated to mirror the new contract —
+  verified end-to-end manually: a real click → deterministic match → claim
+  sequence succeeds, a claim with a fully fabricated `click_id` is
+  rejected `unverified_claim`, and a claim referencing a real but
+  never-matched click is rejected the same way.
+
+**Rollout.** Hard cutover, not a transition window — backend + client SDK
+changes ship together; old mobile builds that predate this change (no
+`click_id` sent to `/claim`) fail to claim from the moment this backend
+deploys. Reasonable here since Sparkle is still in closed testing, not
+live with real users; coordinated with the mobile SDK bump immediately
+after merge.
+
+**Explicitly deferred to the next increment**, not fixed here: client IP
+trust (`clientIp()`'s leftmost-`X-Forwarded-For` bug, Node-only; PHP's
+`$request->ip()` is safer but conditional on the host's own `TrustProxies`
+config, which this SDK doesn't document as a requirement anywhere), the
+remaining unbounded growth of `referral_match_attempts`, reward
+distribution not being atomic with the claim insert, the web click
+registration racing the app-scheme navigation beyond the minimal slice
+needed here (awaiting the click before computing deterministic channels),
+raw device IDs in `referral_match_attempts`' logging, and the PHP/Node
+language-column-width and `languageMatches`-split divergence.

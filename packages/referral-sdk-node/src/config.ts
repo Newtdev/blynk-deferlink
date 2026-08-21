@@ -37,6 +37,8 @@ export interface ReferralConfigInput {
   min_confidence?: number;
   rate_limit_clicks_per_hour?: number;
   rate_limit_matches_per_day?: number;
+  /** Previously unthrottled — see decisions.md #21. */
+  rate_limit_claims_per_hour?: number;
   hash_device_ids?: boolean;
   scoring?: Partial<ScoringWeights>;
   rewards?: Partial<RewardsConfig>;
@@ -53,6 +55,7 @@ export class ReferralConfig {
   readonly minConfidence: number;
   readonly rateLimitClicksPerHour: number;
   readonly rateLimitMatchesPerDay: number;
+  readonly rateLimitClaimsPerHour: number;
   readonly hashDeviceIds: boolean;
   readonly scoring: ScoringWeights;
   readonly rewards: RewardsConfig;
@@ -63,6 +66,7 @@ export class ReferralConfig {
     this.minConfidence = c.min_confidence ?? 70;
     this.rateLimitClicksPerHour = c.rate_limit_clicks_per_hour ?? 10;
     this.rateLimitMatchesPerDay = c.rate_limit_matches_per_day ?? 5;
+    this.rateLimitClaimsPerHour = c.rate_limit_claims_per_hour ?? 10;
     this.hashDeviceIds = c.hash_device_ids ?? true;
 
     this.scoring = {

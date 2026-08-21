@@ -22,4 +22,5 @@ Route::post('/match', MatchController::class)
     ->name('referral.match');
 
 Route::post('/claim', ClaimController::class)
+    ->middleware('referral.throttle:claim')
     ->name('referral.claim');

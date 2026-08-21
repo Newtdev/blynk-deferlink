@@ -1,17 +1,16 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { ReferralConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { referralConversions } from '../db/schema.js';
+import type { ClickStore } from './clickStore.js';
 
 export interface ClaimInput {
   referralCode: string;
   deviceId: string;
   platform: 'ios' | 'android';
-  matchMethod: 'install_referrer' | 'fingerprint' | 'clipboard';
-  clickId?: string | null;
+  clickId: string;
   userId?: string | null;
-  confidence?: number | null;
 }
 
 export interface Reward {
@@ -21,23 +20,39 @@ export interface Reward {
 
 export type ClaimResult =
   | { success: true; reward: Reward }
-  | { success: false; duplicate: boolean };
+  | { success: false; duplicate: boolean }
+  | { success: false; unverified: true };
 
 /**
  * Records referral conversions and distributes rewards. Enforces one
  * referral per device for the device's lifetime. Ported from
  * packages/referral-sdk/src/Services/ConversionTracker.php.
+ *
+ * `claim()` trusts nothing the caller *says* happened — `method` and
+ * `confidence` are pulled from the click row `/match` (or the deterministic
+ * redeem path) already locked, not from the claim request itself. See
+ * decisions.md #21: a client-declared `device_id`/`method`/`confidence`
+ * with no server-side proof was previously enough to mint a reward with no
+ * real click or match ever happening.
  */
 export class ConversionTracker {
   constructor(
     private readonly db: Db,
     private readonly config: ReferralConfig,
+    private readonly clicks: ClickStore,
   ) {}
 
   async claim(input: ClaimInput): Promise<ClaimResult> {
-    const storedDeviceId = this.config.hashDeviceIds
-      ? hashDeviceId(input.deviceId)
-      : input.deviceId;
+    const storedDeviceId = resolveDeviceId(input.deviceId, this.config);
+
+    // The entire proof: click_id must reference a row this exact device
+    // already won the lock on, for the exact code being claimed. A click_id
+    // never reaches an arbitrary requester — only the device that performed
+    // a real /click + /match (or deterministic redeem) ever sees one.
+    const locked = await this.clicks.findLockedClick(input.clickId);
+    if (!locked || locked.referralCode !== input.referralCode || locked.matchedDeviceId !== storedDeviceId) {
+      return { success: false, unverified: true };
+    }
 
     if (await this.deviceHasConverted(storedDeviceId)) {
       return { success: false, duplicate: true };
@@ -45,12 +60,12 @@ export class ConversionTracker {
 
     try {
       await this.db.insert(referralConversions).values({
-        clickId: input.clickId ?? randomUUID(),
+        clickId: input.clickId,
         referralCode: input.referralCode,
         deviceId: storedDeviceId,
         platform: input.platform,
-        matchMethod: input.matchMethod,
-        matchConfidence: input.confidence ?? null,
+        matchMethod: locked.matchMethod ?? 'fingerprint',
+        matchConfidence: locked.matchConfidence,
         userId: input.userId ?? null,
       });
     } catch (err) {
@@ -94,6 +109,18 @@ export class ConversionTracker {
 /** One-way, for dedup only. Never reversed. */
 export function hashDeviceId(deviceId: string): string {
   return createHash('sha256').update(deviceId).digest('hex');
+}
+
+/**
+ * Applies `hash_device_ids` consistently everywhere a device_id is
+ * persisted — `referral_clicks.matched_device_id` (see ClickStore.lockToDevice,
+ * called from routes/referral.ts) and `referral_conversions.device_id`
+ * (this file) both need to agree on the same stored form, or claim()'s
+ * lock-ownership check (`locked.matchedDeviceId !== storedDeviceId`)
+ * compares a hash against a raw value and never matches.
+ */
+export function resolveDeviceId(deviceId: string, config: ReferralConfig): string {
+  return config.hashDeviceIds ? hashDeviceId(deviceId) : deviceId;
 }
 
 function isUniqueViolation(err: unknown): boolean {

@@ -41,7 +41,7 @@ class ReferralServiceProvider extends ServiceProvider
             new FingerprintMatcher($pdo($app), $app->make(ReferralConfig::class)));
 
         $this->app->singleton(ConversionTracker::class, fn ($app) =>
-            new ConversionTracker($pdo($app), $app->make(ReferralConfig::class)));
+            new ConversionTracker($pdo($app), $app->make(ReferralConfig::class), $app->make(ClickStore::class)));
     }
 
     public function boot(Router $router): void

@@ -9,8 +9,11 @@ use Sparkle\Referral\Support\ReferralConfig;
 
 /**
  * All click-table reads/writes. Framework-agnostic (PDO only).
+ *
+ * Not `final` — ConversionTrackerTest subclasses it to stub findLockedClick()
+ * without a real database connection.
  */
-final class ClickStore
+class ClickStore
 {
     public function __construct(
         private readonly PDO $pdo,
@@ -61,18 +64,89 @@ final class ClickStore
 
     /**
      * Atomically lock a click to a device so it can never be matched twice.
-     * Returns true only if this call is the one that won the lock.
+     * Returns true only if this call is the one that won the lock. Records
+     * `$method`/`$confidence` on the click row itself — this is the row
+     * /claim consults, so what actually happened is recorded here, at the
+     * moment it happened, rather than trusted from whatever a later /claim
+     * request says happened (see docs/decisions.md #21).
      */
-    public function lockToDevice(string $clickId, string $deviceId): bool
-    {
+    public function lockToDevice(
+        string $clickId,
+        string $deviceId,
+        string $method,
+        ?float $confidence = null,
+    ): bool {
         $stmt = $this->pdo->prepare(
             'UPDATE referral_clicks
-             SET matched = 1, matched_device_id = :device_id, matched_at = UTC_TIMESTAMP()
+             SET matched = 1, matched_device_id = :device_id, matched_at = UTC_TIMESTAMP(),
+                 match_method = :method, match_confidence = :confidence
              WHERE click_id = :click_id AND matched = 0'
         );
-        $stmt->execute([':device_id' => $deviceId, ':click_id' => $clickId]);
+        $stmt->execute([
+            ':device_id'  => $deviceId,
+            ':method'     => $method,
+            ':confidence' => $confidence,
+            ':click_id'   => $clickId,
+        ]);
 
         return $stmt->rowCount() === 1;
+    }
+
+    /**
+     * The row /claim consults as its entire proof of legitimacy: a click_id
+     * only ever reaches a real device via a locked /match response, the
+     * Android install-referrer param, or the iOS clipboard payload — never
+     * handed out to an arbitrary requester — so "this click is matched, and
+     * matched to this device" is the whole trust boundary. See
+     * ConversionTracker::claim() and docs/decisions.md #21.
+     *
+     * @return array{referral_code: string, matched_device_id: ?string, match_method: ?string, match_confidence: ?float}|null
+     */
+    public function findLockedClick(string $clickId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT referral_code, matched, matched_device_id, match_method, match_confidence
+             FROM referral_clicks WHERE click_id = :click_id'
+        );
+        $stmt->execute([':click_id' => $clickId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($row === false || !((bool) $row['matched'])) {
+            return null;
+        }
+
+        return [
+            'referral_code'     => (string) $row['referral_code'],
+            'matched_device_id' => $row['matched_device_id'],
+            'match_method'      => $row['match_method'],
+            'match_confidence'  => $row['match_confidence'] !== null ? (float) $row['match_confidence'] : null,
+        ];
+    }
+
+    /**
+     * Look up a click by id for the deterministic recovery paths (Android
+     * install referrer, iOS clipboard) — both already know their click_id
+     * (embedded by the web landing page at click time) instead of needing
+     * fingerprint scoring to find it. Returns null if the click doesn't
+     * exist, is already matched, or has expired, so the caller can fall
+     * back to fingerprint matching exactly like an empty referrer does.
+     *
+     * @return array{referral_code: string}|null
+     */
+    public function findUnmatchedClick(string $clickId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT referral_code, matched FROM referral_clicks
+             WHERE click_id = :click_id AND expires_at > UTC_TIMESTAMP()'
+        );
+        $stmt->execute([':click_id' => $clickId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($row === false || (bool) $row['matched']) {
+            return null;
+        }
+
+        return ['referral_code' => (string) $row['referral_code']];
     }
 
     /** Count clicks from an IP within the last hour (rate limiting). */

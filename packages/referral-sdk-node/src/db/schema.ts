@@ -42,6 +42,11 @@ export const referralClicks = pgTable(
     matched: boolean('matched').notNull().default(false),
     matchedDeviceId: varchar('matched_device_id', { length: 255 }),
     matchedAt: timestamp('matched_at', { withTimezone: true }),
+    // What actually matched it — recorded here, at lock time, specifically so
+    // /claim can pull method/confidence from this row instead of trusting
+    // whatever the claim request itself claims happened (see decisions.md #21).
+    matchMethod: varchar('match_method', { length: 20 }),
+    matchConfidence: doublePrecision('match_confidence'),
 
     // Meta
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -80,20 +85,33 @@ export const referralConversions = pgTable(
 );
 
 /**
- * Generic fixed-window rate-limit hit log — one row per request that counted
- * against a bucket. There's no in-memory cache here (unlike the PHP SDK's
- * Laravel `RateLimiter`, which is cache-backed) because a stateless Vercel
- * function can't hold memory between invocations; a DB row is the one thing
- * that works identically whether this app runs long-running or serverless.
+ * Fixed-window rate-limit counter — one row per bucket per window, upserted
+ * atomically (`INSERT ... ON CONFLICT (bucket_key, window_start) DO UPDATE
+ * SET count = count + 1 RETURNING count`) so a burst of concurrent requests
+ * can't all read a stale pre-increment count and all pass (see decisions.md
+ * #21 — the original one-row-per-hit design was a SELECT-count-then-INSERT
+ * check-then-act race). There's no in-memory cache here (unlike the PHP
+ * SDK's Laravel `RateLimiter`, which is cache-backed) because a stateless
+ * Vercel function can't hold memory between invocations; a DB row is the one
+ * thing that works identically whether this app runs long-running or
+ * serverless.
+ *
+ * Fixed-window, not sliding: `windowStart` is the window's floor
+ * (`Math.floor(now / decayMs) * decayMs`), not "now minus decaySeconds".
+ * That's what makes the upsert's conflict target meaningful — trades away
+ * the sliding window's smoother edge behavior (a request right after a
+ * window boundary can theoretically see close to 2x max in a short span)
+ * for real atomicity, which matters more here.
  */
 export const referralRateLimitHits = pgTable(
   'referral_rate_limit_hits',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
     bucketKey: varchar('bucket_key', { length: 191 }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+    count: integer('count').notNull().default(1),
   },
-  (t) => [index('idx_bucket_created').on(t.bucketKey, t.createdAt)],
+  (t) => [uniqueIndex('idx_bucket_window').on(t.bucketKey, t.windowStart)],
 );
 
 /**

@@ -128,6 +128,25 @@ const routes = {
   },
 
   '/api/referral/match': (body, ip) => {
+    // Deterministic redeem: the client already knows click_id (Android
+    // install referrer, iOS clipboard) — skip scoring entirely, go straight
+    // to a lookup + lock. Mirrors routes/referral.ts's deterministic
+    // fast-path — see docs/decisions.md #21.
+    if (body.click_id) {
+      const click = clicks.find((c) => c.click_id === body.click_id);
+      if (!click || click.matched || Date.now() - click.created_at > MATCH_WINDOW_MS) {
+        console.log(`  match miss    (deterministic, click_id=${String(body.click_id).slice(0, 8)})`);
+        return [200, { matched: false, referral_code: null }];
+      }
+      const method = body.method || 'install_referrer';
+      click.matched = true;
+      click.matched_device_id = body.device_id;
+      click.match_method = method;
+      click.match_confidence = null;
+      console.log(`  match hit     code=${click.referral_code} method=${method} (deterministic)`);
+      return [200, { matched: true, referral_code: click.referral_code, click_id: click.click_id, match_method: method }];
+    }
+
     const fp = { ...(body.fingerprint || {}), platform: body.platform, ip };
     let best = null;
     let bestScore = 0;
@@ -146,12 +165,28 @@ const routes = {
     }
     best.matched = true;
     best.matched_device_id = body.device_id;
+    best.match_method = 'fingerprint';
+    best.match_confidence = bestScore;
     console.log(`  match hit     code=${best.referral_code} confidence=${bestScore}`);
-    return [200, { matched: true, referral_code: best.referral_code, confidence: bestScore, match_method: 'fingerprint' }];
+    return [
+      200,
+      { matched: true, referral_code: best.referral_code, click_id: best.click_id, confidence: bestScore, match_method: 'fingerprint' },
+    ];
   },
 
   '/api/referral/claim': (body) => {
     if (!body.referral_code) return [422, { success: false, error: 'invalid_or_expired_code' }];
+    if (!body.click_id) return [422, { success: false, error: 'invalid_request' }];
+
+    // The entire proof: click_id must reference a click this exact device
+    // already won the lock on, for the exact code being claimed — nothing
+    // else in the request body is trusted. See docs/decisions.md #21.
+    const click = clicks.find((c) => c.click_id === body.click_id);
+    if (!click || !click.matched || click.matched_device_id !== body.device_id || click.referral_code !== body.referral_code) {
+      console.log(`  claim REJECTED unverified click_id=${String(body.click_id).slice(0, 8)}`);
+      return [403, { success: false, error: 'unverified_claim' }];
+    }
+
     if (convertedDevices.has(body.device_id)) return [409, { success: false, error: 'already_claimed' }];
     convertedDevices.add(body.device_id);
     console.log(`  claim ok      code=${body.referral_code} device=${String(body.device_id).slice(0, 12)}`);

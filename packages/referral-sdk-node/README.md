@@ -20,6 +20,20 @@ first launch — no in-app rewards/conversion tracking), you can simply never
 call `/claim`. It stays fully functional but unused; nothing else depends
 on it.
 
+**`/claim` requires proof, not just a claim.** It takes a `click_id` — the
+one `/click` returned, later locked to this device by a successful `/match`
+call (including its deterministic fast-path — see below) — and verifies
+server-side that the referenced click is actually locked to this exact
+`device_id` and `referral_code` before recording a conversion or paying out
+a reward. It no longer accepts `method`/`confidence` from the request at
+all; those are read from what `/match` already recorded on the click row.
+A `/claim` call that doesn't reference a real, matching, device-owned lock
+gets rejected with `unverified_claim` — this replaced trusting whatever the
+request body said happened (see [docs/decisions.md #21](../../docs/decisions.md)).
+`@sparkle/referral-mobile` handles this automatically; if you're calling
+this API directly, `/match`'s response now includes `click_id` — thread it
+through to `/claim`.
+
 ## Why one codebase runs both long-running and serverless
 
 [src/app.ts](src/app.ts) builds a single Express app (`createApp()`). Two
@@ -40,7 +54,8 @@ handled so the same code works everywhere instead:
 - **Database access** uses `@neondatabase/serverless`'s HTTP driver, not a
   TCP connection pool — every query is a `fetch()` call, so there's no
   pool-warmup/teardown problem on cold starts.
-- **Rate limiting** is DB-backed (a row per hit, see `referral_rate_limit_hits`
+- **Rate limiting** is DB-backed (a fixed-window counter, one row per
+  bucket per window, upserted atomically — see `referral_rate_limit_hits`
   in [src/db/schema.ts](src/db/schema.ts)), not an in-memory counter, since a
   stateless serverless invocation can't hold memory between requests anyway.
 - **Expired-click cleanup** isn't a background cron thread (which can't
@@ -114,6 +129,7 @@ Defaults match `sparkle/referral-sdk` (PHP) — see
 | `REFERRAL_MIN_CONFIDENCE` | `70` | Minimum fingerprint score (0–100) to accept a match |
 | `REFERRAL_RATE_LIMIT_CLICKS_PER_HOUR` | `10` | Per-IP click throttle |
 | `REFERRAL_RATE_LIMIT_MATCHES_PER_DAY` | `5` | Per-device match throttle |
+| `REFERRAL_RATE_LIMIT_CLAIMS_PER_HOUR` | `10` | Per-device claim throttle |
 | `REFERRAL_HASH_DEVICE_IDS` | `true` | SHA-256 device IDs before storing (one-way, dedup only) |
 | `REFERRAL_REWARDS_ENABLED` | `true` | Whether `/claim` distributes a reward |
 | `REFERRAL_REFERRER_REWARD` / `REFERRAL_REFEREE_REWARD` | `500` | Reward amounts |
@@ -169,14 +185,14 @@ curl "https://<project>.vercel.app/api/referral/analytics?since=2026-08-01T00:00
 }
 ```
 
-There's deliberately no "by match method" breakdown. Android's Install
-Referrer path resolves entirely on-device (see
-[packages/referral-mobile/src/platform/android.ts](../referral-mobile/src/platform/android.ts))
-and never calls this backend at all — only the fingerprint path shows up
-here, so a method split would misrepresent the real mix rather than just
-omit data. If you need real Android/iOS recovery-method analytics, that
-requires the app to report successful `install_referrer` recoveries back to
-the backend explicitly (not built — ask if you want it).
+There's deliberately no "by match method" breakdown yet, even though every
+recovery method now reaches this backend (Android's Install Referrer and
+iOS's clipboard tier both redeem their `click_id` through `/match`'s
+deterministic fast-path — see
+[packages/referral-mobile/src/platform/android.ts](../referral-mobile/src/platform/android.ts) —
+instead of resolving entirely on-device as before). The data to build a
+real method breakdown now exists (`referral_clicks.match_method`, set at
+lock time), it's just not surfaced here yet — ask if you want it added.
 
 ## Using it as a library instead of the standalone service
 
