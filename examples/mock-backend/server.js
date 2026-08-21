@@ -8,16 +8,46 @@
  */
 
 const http = require('http');
+const crypto = require('crypto');
 
 const PORT = process.env.PORT || 8787;
 const MATCH_WINDOW_MS = 48 * 60 * 60 * 1000;
 const MIN_CONFIDENCE = 70;
 const WEIGHTS = { ip: 40, device: 25, screen: 15, timezone: 10, language: 10 };
 
+// Dev-only, hardcoded — a real deployment requires CLICK_TOKEN_SECRET to be
+// set explicitly (see support/clickToken.ts / Support/ClickToken.php) and
+// refuses to run without it. See docs/decisions.md #22.
+const CLICK_TOKEN_SECRET = 'mock-backend-dev-secret-not-for-production';
+
 /** @type {Array<any>} */
 const clicks = [];
 /** @type {Set<string>} */
 const convertedDevices = new Set();
+
+// --- click token (mirrors support/clickToken.ts) -----------------------------
+
+function signClickToken(clickId, expiresAtMs) {
+  const exp = Math.floor(expiresAtMs / 1000);
+  const payload = `${clickId}.${exp}`;
+  const sig = crypto.createHmac('sha256', CLICK_TOKEN_SECRET).update(payload).digest('hex');
+  return `${payload}.${sig}`;
+}
+
+function verifyClickToken(token) {
+  if (typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [clickId, expRaw, sig] = parts;
+  const exp = Number(expRaw);
+  if (!clickId || !sig || !Number.isFinite(exp)) return null;
+  const expected = crypto.createHmac('sha256', CLICK_TOKEN_SECRET).update(`${clickId}.${expRaw}`).digest('hex');
+  const sigBuf = Buffer.from(sig, 'hex');
+  const expectedBuf = Buffer.from(expected, 'hex');
+  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
+  if (Math.floor(Date.now() / 1000) > exp) return null;
+  return { clickId };
+}
 
 // --- fingerprint helpers (ported from FingerprintMatcher) -------------------
 
@@ -114,39 +144,31 @@ function readBody(req) {
 const routes = {
   '/api/referral/click': (body, ip) => {
     if (!body.referral_code) return [422, { success: false, error: 'invalid_or_expired_code' }];
+    const clickId = uuid();
+    const expiresAtMs = Date.now() + MATCH_WINDOW_MS;
     const click = {
-      click_id: uuid(),
+      click_id: clickId,
       referral_code: body.referral_code,
       ip_address: ip,
       created_at: Date.now(),
+      expires_at: expiresAtMs,
       matched: false,
       ...(body.fingerprint || {}),
     };
     clicks.push(click);
-    console.log(`  click stored  code=${click.referral_code} ip=${ip} id=${click.click_id.slice(0, 8)}`);
-    return [200, { success: true, click_id: click.click_id }];
+    // Signed for free, right here — the same thing that lets the
+    // deterministic recovery paths (Android referrer, iOS clipboard) stay
+    // fully local and network-free. See docs/decisions.md #22.
+    const token = signClickToken(clickId, expiresAtMs);
+    console.log(`  click stored  code=${click.referral_code} ip=${ip} id=${clickId.slice(0, 8)}`);
+    return [200, { success: true, click_id: clickId, token }];
   },
 
   '/api/referral/match': (body, ip) => {
-    // Deterministic redeem: the client already knows click_id (Android
-    // install referrer, iOS clipboard) — skip scoring entirely, go straight
-    // to a lookup + lock. Mirrors routes/referral.ts's deterministic
-    // fast-path — see docs/decisions.md #21.
-    if (body.click_id) {
-      const click = clicks.find((c) => c.click_id === body.click_id);
-      if (!click || click.matched || Date.now() - click.created_at > MATCH_WINDOW_MS) {
-        console.log(`  match miss    (deterministic, click_id=${String(body.click_id).slice(0, 8)})`);
-        return [200, { matched: false, referral_code: null }];
-      }
-      const method = body.method || 'install_referrer';
-      click.matched = true;
-      click.matched_device_id = body.device_id;
-      click.match_method = method;
-      click.match_confidence = null;
-      console.log(`  match hit     code=${click.referral_code} method=${method} (deterministic)`);
-      return [200, { matched: true, referral_code: click.referral_code, click_id: click.click_id, match_method: method }];
-    }
-
+    // Probabilistic fingerprint matching only — the deterministic paths
+    // (Android referrer, iOS clipboard) never call this at all anymore;
+    // they redeem the click-minted token directly at /claim. See
+    // docs/decisions.md #22.
     const fp = { ...(body.fingerprint || {}), platform: body.platform, ip };
     let best = null;
     let bestScore = 0;
@@ -167,29 +189,49 @@ const routes = {
     best.matched_device_id = body.device_id;
     best.match_method = 'fingerprint';
     best.match_confidence = bestScore;
+    const token = signClickToken(best.click_id, best.expires_at);
     console.log(`  match hit     code=${best.referral_code} confidence=${bestScore}`);
     return [
       200,
-      { matched: true, referral_code: best.referral_code, click_id: best.click_id, confidence: bestScore, match_method: 'fingerprint' },
+      { matched: true, referral_code: best.referral_code, click_id: best.click_id, token, confidence: bestScore, match_method: 'fingerprint' },
     ];
   },
 
   '/api/referral/claim': (body) => {
-    if (!body.referral_code) return [422, { success: false, error: 'invalid_or_expired_code' }];
-    if (!body.click_id) return [422, { success: false, error: 'invalid_request' }];
+    if (!body.token) return [422, { success: false, error: 'invalid_request' }];
 
-    // The entire proof: click_id must reference a click this exact device
-    // already won the lock on, for the exact code being claimed — nothing
-    // else in the request body is trusted. See docs/decisions.md #21.
-    const click = clicks.find((c) => c.click_id === body.click_id);
-    if (!click || !click.matched || click.matched_device_id !== body.device_id || click.referral_code !== body.referral_code) {
-      console.log(`  claim REJECTED unverified click_id=${String(body.click_id).slice(0, 8)}`);
+    const verified = verifyClickToken(body.token);
+    if (!verified) {
+      console.log('  claim REJECTED invalid/expired/tampered token');
       return [403, { success: false, error: 'unverified_claim' }];
+    }
+
+    const click = clicks.find((c) => c.click_id === verified.clickId);
+    if (!click || click.expires_at < Date.now()) {
+      console.log(`  claim REJECTED unknown/expired click click_id=${verified.clickId.slice(0, 8)}`);
+      return [403, { success: false, error: 'unverified_claim' }];
+    }
+
+    let matchMethod;
+    if (click.matched) {
+      // Fingerprint path — /match already locked this click. Confirm the
+      // lock belongs to this device; nothing to lock here.
+      if (click.matched_device_id !== body.device_id) {
+        console.log(`  claim REJECTED wrong device for locked click click_id=${verified.clickId.slice(0, 8)}`);
+        return [403, { success: false, error: 'unverified_claim' }];
+      }
+      matchMethod = click.match_method ?? 'fingerprint';
+    } else {
+      // Deterministic path's first real use — lock it right here.
+      matchMethod = body.method || 'fingerprint';
+      click.matched = true;
+      click.matched_device_id = body.device_id;
+      click.match_method = matchMethod;
     }
 
     if (convertedDevices.has(body.device_id)) return [409, { success: false, error: 'already_claimed' }];
     convertedDevices.add(body.device_id);
-    console.log(`  claim ok      code=${body.referral_code} device=${String(body.device_id).slice(0, 12)}`);
+    console.log(`  claim ok      code=${click.referral_code} method=${matchMethod} device=${String(body.device_id).slice(0, 12)}`);
     return [200, { success: true, reward: { type: 'credit', amount: 500 } }];
   },
 };
@@ -211,4 +253,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { score, routes, clicks, convertedDevices };
+module.exports = { score, signClickToken, verifyClickToken, routes, clicks, convertedDevices };

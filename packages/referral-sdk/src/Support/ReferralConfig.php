@@ -17,6 +17,7 @@ final class ReferralConfig
     public readonly int $rateLimitMatchesPerDay;
     public readonly int $rateLimitClaimsPerHour;
     public readonly bool $hashDeviceIds;
+    public readonly ?string $clickTokenSecret;
 
     /** @var array<string,int> */
     public readonly array $scoring;
@@ -33,6 +34,7 @@ final class ReferralConfig
         $this->rateLimitMatchesPerDay = (int) ($c['rate_limit_matches_per_day'] ?? 5);
         $this->rateLimitClaimsPerHour = (int) ($c['rate_limit_claims_per_hour'] ?? 10);
         $this->hashDeviceIds          = (bool) ($c['hash_device_ids'] ?? true);
+        $this->clickTokenSecret       = $c['click_token_secret'] ?? null;
 
         $scoring = (array) ($c['scoring'] ?? []);
         $this->scoring = [
@@ -60,5 +62,26 @@ final class ReferralConfig
     public function matchWindowSeconds(): int
     {
         return $this->matchWindowHours * 3600;
+    }
+
+    /**
+     * Required, not optional — every /click needs this to mint a token, so
+     * an unconfigured deploy should fail loudly and immediately (at the
+     * point something actually tries to sign/verify one, not at
+     * construction — score()'s existing unit tests build a bare
+     * `new ReferralConfig()` with no secret and must keep working
+     * untouched) rather than silently mint tokens no one can ever verify.
+     */
+    public function requireClickTokenSecret(): string
+    {
+        if ($this->clickTokenSecret === null || $this->clickTokenSecret === '') {
+            throw new \RuntimeException(
+                'click_token_secret is not set. Generate one (e.g. `openssl rand -hex 32`) ' .
+                'and set REFERRAL_CLICK_TOKEN_SECRET in your environment — every /click mints ' .
+                'a signed proof with it, and /claim can\'t verify anything without the same value.',
+            );
+        }
+
+        return $this->clickTokenSecret;
     }
 }
