@@ -6,6 +6,10 @@ that would rather not run PHP. Same API contract, same matching algorithm,
 same DB schema shape, so `@sparkle/referral-web` and `@sparkle/referral-mobile`
 work against either backend unmodified.
 
+**New to this package?** [`docs/integration/referral-sdk-node.md`](../../docs/integration/referral-sdk-node.md)
+is a step-by-step setup guide (local run + Vercel deploy); this README is
+API/config reference.
+
 ```
 POST /api/referral/click     — landing page reports a click + fingerprint
 POST /api/referral/match     — mobile app recovers a code on first launch
