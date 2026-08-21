@@ -1,15 +1,16 @@
-import type { DeviceFingerprint, RecoveryOutcome } from '../types';
+import type { DeviceFingerprint, MatchMethod, RecoveryOutcome } from '../types';
 
 /**
  * Reads the Google Play Install Referrer and extracts the referral code
- * (and, when the landing page's click registration completed in time, the
- * click_id it embedded alongside the code — see storeUrls.ts on the web
- * SDK). This is deterministic (~100%) and requires no network — Google
- * hands the `referrer` string set on the store URL directly to the app
- * after install. That reliability is why it's required on Android rather
- * than optional: fingerprint matching is probabilistic (see
- * fingerprintMatcher.ts's scoring and its recency/IP tradeoffs) and
- * install-referrer sidesteps all of it.
+ * and its signed token (embedded alongside the code by the web landing
+ * page — see storeUrls.ts). This is deterministic (~100%) and requires no
+ * network — Google hands the `referrer` string set on the store URL
+ * directly to the app after install, and the token is read straight out
+ * of it, not verified or redeemed here. That reliability is why it's
+ * required on Android rather than optional: fingerprint matching is
+ * probabilistic (see fingerprintMatcher.ts's scoring and its recency/IP
+ * tradeoffs) and install-referrer sidesteps all of it — see
+ * docs/decisions.md #22 for why recovery itself never touches the network.
  *
  * Backed by `react-native-play-install-referrer` — a real, published wrapper
  * around Google's Play Install Referrer Library (named export
@@ -26,7 +27,7 @@ import type { DeviceFingerprint, RecoveryOutcome } from '../types';
  * a setup mistake worth failing loudly on rather than silently degrading to
  * the weaker fingerprint path.
  */
-export async function readInstallReferrer(): Promise<{ code: string; clickId: string | null } | null> {
+export async function readInstallReferrer(): Promise<{ code: string; token: string | null } | null> {
   let PlayInstallReferrer: {
     getInstallReferrerInfo: (
       callback: (
@@ -62,42 +63,35 @@ export async function readInstallReferrer(): Promise<{ code: string; clickId: st
     const referrer = info?.installReferrer ?? '';
     if (!referrer) return null;
 
-    // referrer looks like "utm_source=referral&code=1234&click_id=uuid"
+    // referrer looks like "utm_source=referral&code=1234&token=uuid.exp.hmac"
     const params = new URLSearchParams(referrer);
     const code = params.get('code');
     if (!code || code.trim() === '') return null;
 
-    const rawClickId = params.get('click_id');
-    const clickId = rawClickId && rawClickId.trim() !== '' ? rawClickId : null;
-    return { code, clickId };
+    const rawToken = params.get('token');
+    const token = rawToken && rawToken.trim() !== '' ? rawToken : null;
+    return { code, token };
   } catch {
     return null;
   }
 }
 
+const METHOD: MatchMethod = 'install_referrer';
+
 export async function recoverAndroid(
   fingerprint: DeviceFingerprint,
   matchViaFingerprint: (fp: DeviceFingerprint) => Promise<RecoveryOutcome>,
-  /**
-   * Redeems a click_id deterministically via /match's fast-path — locks it
-   * to this device server-side, which /claim now requires (see
-   * docs/decisions.md #21). Returns a null-code outcome if the redeem
-   * fails (expired, already matched elsewhere, network error).
-   */
-  redeemDeterministic: (clickId: string) => Promise<RecoveryOutcome>,
 ): Promise<RecoveryOutcome> {
   const referrer = await readInstallReferrer();
 
-  if (referrer?.clickId) {
-    const redeemed = await redeemDeterministic(referrer.clickId);
-    if (redeemed.code) return redeemed;
-    // Redeem failed — fall through to fingerprint matching rather than
-    // trusting the referrer's code with no server-side lock, which /claim
-    // would reject anyway.
+  // No network call here at all — the token is carried, not verified. A
+  // code with no token (older web SDK version on the landing page, or a
+  // truncated param) can never be claimed anyway, so it's treated the same
+  // as no code: fall through to fingerprint matching, which can produce a
+  // real one via /match.
+  if (referrer?.code && referrer.token) {
+    return { code: referrer.code, method: METHOD, confidence: null, token: referrer.token };
   }
-  // No click_id at all (older web SDK version on the landing page, a
-  // truncated param, sideload, or no referrer) falls through the same way
-  // — a bare code with nothing to redeem can never be claimed either.
 
   return matchViaFingerprint(fingerprint);
 }

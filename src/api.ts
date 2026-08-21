@@ -37,9 +37,10 @@ export function createApi(config: ReferralConfig) {
   return {
     /**
      * POST /referral/match — probabilistic fingerprint recovery (iOS, or
-     * Android's fallback when the Install Referrer is empty). `method` is
-     * implicit server-side ('fingerprint') whenever no click_id is sent —
-     * see `redeem()` for the deterministic counterpart.
+     * Android's fallback when the Install Referrer is empty). Android's
+     * primary path and iOS's clipboard tier never call this at all — both
+     * already have a token, read locally off the referrer/clipboard, with
+     * nothing to redeem until /claim. See docs/decisions.md #22.
      */
     async match(fingerprint: DeviceFingerprint): Promise<MatchResponse> {
       return postJson<MatchResponse>(
@@ -61,45 +62,28 @@ export function createApi(config: ReferralConfig) {
     },
 
     /**
-     * POST /referral/match — deterministic redeem: the caller already has a
-     * click_id (Android install referrer, iOS clipboard payload), so this
-     * skips fingerprint scoring server-side entirely and goes straight to a
-     * lookup + lock. See docs/decisions.md #21.
-     */
-    async redeem(
-      deviceId: string,
-      platform: MobilePlatform,
-      clickId: string,
-      method: Extract<MatchMethod, 'install_referrer' | 'clipboard'>,
-    ): Promise<MatchResponse> {
-      return postJson<MatchResponse>(
-        `${base}/referral/match`,
-        { device_id: deviceId, platform, click_id: clickId, method },
-        timeout,
-      );
-    },
-
-    /**
-     * POST /referral/claim — record the conversion after signup. `clickId`
-     * must reference a click already locked to `deviceId` (by `match()` or
-     * `redeem()`) — the server verifies this itself now rather than trusting
-     * whatever this call says happened, so `method`/`confidence` are no
-     * longer sent here at all. See docs/decisions.md #21.
+     * POST /referral/claim — record the conversion after signup. `token`
+     * is the entire proof (see support/clickToken.ts on the backend) — the
+     * server verifies it and either confirms an existing lock (fingerprint
+     * path) or makes one for the first time right here (deterministic
+     * path, redeemed for real for the first time at this exact call).
+     * `method` is only read in that second case — a labeling detail, not a
+     * security check either way. See docs/decisions.md #21/#22.
      */
     async claim(params: {
-      referralCode: string;
       deviceId: string;
       platform: MobilePlatform;
-      clickId: string;
+      token: string;
+      method?: MatchMethod;
       userId: string;
     }): Promise<ClaimResult> {
       return postJson<ClaimResult>(
         `${base}/referral/claim`,
         {
-          referral_code: params.referralCode,
           device_id: params.deviceId,
           platform: params.platform,
-          click_id: params.clickId,
+          token: params.token,
+          method: params.method,
           user_id: params.userId,
         },
         timeout,
