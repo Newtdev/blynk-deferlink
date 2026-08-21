@@ -2,6 +2,7 @@ import { and, desc, eq, gte } from 'drizzle-orm';
 import type { ReferralConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { referralClicks, referralMatchAttempts } from '../db/schema.js';
+import { resolveDeviceId } from '../support/deviceId.js';
 import { parseModel, parseUa, type UaSignature } from '../support/userAgentParser.js';
 
 /** A stored click row, as read back from the DB (only the columns scoring needs). */
@@ -198,6 +199,12 @@ export class FingerprintMatcher {
    * the request. Best-effort and isolated deliberately — a logging
    * failure must never turn a real match (or a real non-match) into a
    * 500, so failures here are swallowed, not thrown.
+   *
+   * `device_id` is hashed the same way `hash_device_ids` hashes it
+   * everywhere else (`referral_clicks.matched_device_id`,
+   * `referral_conversions.device_id`) — this table stored it raw before,
+   * contradicting the config's own documented privacy promise. See
+   * decisions.md #23.
    */
   private async logAttempt(
     incoming: IncomingFingerprint,
@@ -205,7 +212,7 @@ export class FingerprintMatcher {
   ): Promise<void> {
     try {
       await this.db.insert(referralMatchAttempts).values({
-        deviceId: incoming.deviceId ?? 'unknown',
+        deviceId: incoming.deviceId ? resolveDeviceId(incoming.deviceId, this.config) : 'unknown',
         platform: incoming.platform ?? 'unknown',
         ipAddress: incoming.ip,
         userAgent: incoming.userAgent ?? null,

@@ -13,7 +13,10 @@ CREATE TABLE IF NOT EXISTS referral_clicks (
     screen_height INT,
     pixel_ratio DECIMAL(3,2),
     timezone VARCHAR(100),
-    language VARCHAR(10),
+    -- 35, not 10: real device locale identifiers run longer than a bare
+    -- BCP-47 primary tag — iOS Simulator reports "en_US_POSIX" (11 chars).
+    -- Matches the Node backend's schema (decisions.md #23).
+    language VARCHAR(35),
     platform VARCHAR(50),
     referrer_url TEXT,
 
@@ -45,6 +48,10 @@ CREATE TABLE IF NOT EXISTS referral_conversions (
     match_method ENUM('install_referrer', 'fingerprint', 'clipboard') NOT NULL,
     match_confidence DECIMAL(5,2),              -- 0.00 to 100.00
     user_id VARCHAR(255) NULL,                  -- Set after user signs up
+    -- 'granted' optimistically on insert; flipped to 'failed' if
+    -- on_claim_callback throws — the claim itself still succeeds either
+    -- way (decisions.md #23), this is for reconciliation only.
+    reward_status ENUM('granted', 'failed') NOT NULL DEFAULT 'granted',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     INDEX idx_device (device_id),

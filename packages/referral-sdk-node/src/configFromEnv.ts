@@ -17,6 +17,7 @@ export function configFromEnv(): ReferralConfigInput {
     rate_limit_matches_per_day: numOr(process.env.REFERRAL_RATE_LIMIT_MATCHES_PER_DAY, 5),
     rate_limit_claims_per_hour: numOr(process.env.REFERRAL_RATE_LIMIT_CLAIMS_PER_HOUR, 10),
     hash_device_ids: boolOr(process.env.REFERRAL_HASH_DEVICE_IDS, true),
+    retention_days: numOr(process.env.REFERRAL_RETENTION_DAYS, 30),
     rewards: {
       enabled: boolOr(process.env.REFERRAL_REWARDS_ENABLED, true),
       referrer_reward: numOr(process.env.REFERRAL_REFERRER_REWARD, 500),

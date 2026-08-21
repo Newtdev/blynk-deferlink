@@ -1,14 +1,17 @@
+import { timingSafeEqual } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import type { ReferralConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { AnalyticsService } from '../services/analyticsService.js';
 import { ClickStore } from '../services/clickStore.js';
-import { ConversionTracker, resolveDeviceId } from '../services/conversionTracker.js';
+import { ConversionTracker } from '../services/conversionTracker.js';
 import { FingerprintMatcher } from '../services/fingerprintMatcher.js';
 import { RateLimiter } from '../services/rateLimiter.js';
+import { RetentionService } from '../services/retention.js';
 import { isValidCode } from '../support/codeValidator.js';
 import { getClickTokenSecret, signClickToken } from '../support/clickToken.js';
+import { resolveDeviceId } from '../support/deviceId.js';
 
 const clickFingerprintSchema = z.object({
   user_agent: z.string().nullish(),
@@ -78,6 +81,7 @@ export function referralRouter(db: Db, config: ReferralConfig): Router {
   const conversions = new ConversionTracker(db, config, clicks);
   const rateLimiter = new RateLimiter(db, config);
   const analytics = new AnalyticsService(db);
+  const retention = new RetentionService(db);
 
   router.post('/click', async (req, res, next) => {
     try {
@@ -204,6 +208,10 @@ export function referralRouter(db: Db, config: ReferralConfig): Router {
    * Guard with CRON_SECRET and point your scheduler at it. Registered on
    * both GET and POST because Vercel Cron only ever issues GET requests;
    * a plain crontab (self-hosted) can use either.
+   *
+   * Also purges old `referral_match_attempts`/`referral_rate_limit_hits`
+   * rows past `retention_days` — both grew unbounded forever before this,
+   * unlike `referral_clicks` (see decisions.md #23).
    */
   router.all('/cleanup', async (req, res, next) => {
     try {
@@ -214,7 +222,13 @@ export function referralRouter(db: Db, config: ReferralConfig): Router {
         return res.status(401).json({ success: false, error: 'unauthorized' });
       }
       const removed = await clicks.deleteExpired();
-      return res.json({ success: true, removed });
+      const { matchAttemptsRemoved, rateLimitHitsRemoved } = await retention.purgeOld(config.retentionDays);
+      return res.json({
+        success: true,
+        removed,
+        match_attempts_removed: matchAttemptsRemoved,
+        rate_limit_hits_removed: rateLimitHitsRemoved,
+      });
     } catch (err) {
       next(err);
     }
@@ -252,9 +266,15 @@ export function referralRouter(db: Db, config: ReferralConfig): Router {
   return router;
 }
 
-function clientIp(req: { headers: Record<string, unknown>; socket?: { remoteAddress?: string }; ip?: string }): string {
-  const xff = req.headers['x-forwarded-for'];
-  if (typeof xff === 'string' && xff.length > 0) return xff.split(',')[0]!.trim();
+/**
+ * `req.ip` is Express's own computed value, correct as long as `trust
+ * proxy` (see app.ts) is set to the real hop count rather than `true` —
+ * that's the actual fix; this function no longer hand-parses
+ * X-Forwarded-For itself, which was the bug (trusted the client-suppliable
+ * leftmost entry regardless of how many real proxies were actually in
+ * front). See decisions.md #23.
+ */
+function clientIp(req: { socket?: { remoteAddress?: string }; ip?: string }): string {
   return req.ip ?? req.socket?.remoteAddress ?? '0.0.0.0';
 }
 
@@ -263,7 +283,10 @@ function clientIp(req: { headers: Record<string, unknown>; socket?: { remoteAddr
  * analytics — anything not meant for the public web/mobile SDKs to call).
  * Accepts either `Authorization: Bearer <secret>` (what Vercel Cron sends
  * automatically once the corresponding env var is set) or a plain custom
- * header, for a self-hosted crontab or dashboard fetch.
+ * header, for a self-hosted crontab or dashboard fetch. Constant-time
+ * comparison — these two secrets are the entire authorization mechanism
+ * for a destructive endpoint (/cleanup) and a data-exposing one
+ * (/analytics), worth doing properly. See decisions.md #23.
  */
 function isAuthorizedBySecret(
   req: { headers: Record<string, unknown> },
@@ -274,9 +297,16 @@ function isAuthorizedBySecret(
   if (!secret) return false; // refuse by default until explicitly configured
 
   const auth = req.headers['authorization'];
-  if (typeof auth === 'string' && auth === `Bearer ${secret}`) return true;
+  if (typeof auth === 'string' && constantTimeEqual(auth, `Bearer ${secret}`)) return true;
 
-  return req.headers[headerName] === secret;
+  const header = req.headers[headerName];
+  return typeof header === 'string' && constantTimeEqual(header, secret);
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a, 'utf8');
+  const bBuf = Buffer.from(b, 'utf8');
+  return aBuf.length === bBuf.length && timingSafeEqual(aBuf, bBuf);
 }
 
 function isAuthorizedCron(req: { headers: Record<string, unknown> }): boolean {

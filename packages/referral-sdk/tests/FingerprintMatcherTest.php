@@ -176,4 +176,37 @@ final class FingerprintMatcherTest extends TestCase
 
         $this->assertSame(100.0, $this->matcher()->score($stored, $incoming, $this->now()));
     }
+
+    /**
+     * Both backends' score() functions are meant to agree on every input —
+     * "ported field-for-field" — but nothing mechanically enforced that
+     * until now. The ip_match weight-drift (decisions.md #21/#22) and the
+     * language-split divergence (decisions.md #23 — this backend's own
+     * hardcoded tests above never had an underscore-locale case, because
+     * until #23's fix there was no way to write one that passed) both
+     * shipped and went live before an outside review caught them; neither
+     * suite's hardcoded cases (which only ever exercised each backend
+     * against itself) could have caught either. This fixture is loaded by
+     * both this file and fingerprintMatcher.parity.test.ts (Node) — a case
+     * added here and not mirrored there, or vice versa, is a real gap.
+     */
+    public function test_parity_fixture_matches_node(): void
+    {
+        $path = __DIR__ . '/../../../docs/fixtures/fingerprint-match-cases.json';
+        $cases = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+
+        foreach ($cases as $case) {
+            $stored = $case['stored'];
+            $incoming = $case['incoming'];
+            $now = strtotime($case['now']);
+
+            $score = $this->matcher()->score($stored, $incoming, $now);
+
+            $this->assertSame(
+                (float) $case['expected_score'],
+                $score,
+                "parity fixture case failed: {$case['name']}"
+            );
+        }
+    }
 }

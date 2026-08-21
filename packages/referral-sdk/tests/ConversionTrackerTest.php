@@ -175,6 +175,88 @@ final class ConversionTrackerTest extends TestCase
         $tracker->claim(deviceId: 'device-1', platform: 'android', token: $token, method: 'install_referrer', now: $this->now());
     }
 
+    /**
+     * The stubbed-PDO tests above all stop at the unverified-claim boundary
+     * (a null $pdo throws once claim() reaches the DB-touching success
+     * path) — none of them exercise distributeReward()'s try/catch at all.
+     * These two use a real PDO (in-memory SQLite, with UTC_TIMESTAMP()
+     * shimmed via sqliteCreateFunction() to match the MySQL-flavored SQL
+     * in ConversionTracker.php) so the actual INSERT/UPDATE statements run,
+     * not just the pure verification logic. See decisions.md #23.
+     */
+    private function sqlitePdo(): \PDO
+    {
+        $pdo = new \PDO('sqlite::memory:');
+        $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $pdo->sqliteCreateFunction('UTC_TIMESTAMP', static fn () => gmdate('Y-m-d H:i:s'), 0);
+        $pdo->exec(
+            'CREATE TABLE referral_conversions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                click_id TEXT NOT NULL,
+                referral_code TEXT NOT NULL,
+                device_id TEXT NOT NULL UNIQUE,
+                platform TEXT NOT NULL,
+                match_method TEXT NOT NULL,
+                match_confidence REAL,
+                user_id TEXT,
+                reward_status TEXT NOT NULL DEFAULT \'granted\',
+                created_at TEXT NOT NULL
+            )'
+        );
+
+        return $pdo;
+    }
+
+    public function test_claim_marks_reward_status_failed_when_on_claim_callback_throws(): void
+    {
+        $token = ClickToken::sign('click-1', $this->futureExpiry(), self::SECRET);
+        $locked = $this->baseClick([
+            'matched'           => true,
+            'matched_device_id' => ConversionTracker::hashDeviceId('good-device'),
+            'match_method'      => 'fingerprint',
+            'match_confidence'  => 92.5,
+        ]);
+        $config = new ReferralConfig([
+            'click_token_secret' => self::SECRET,
+            'rewards' => [
+                'on_claim_callback' => function () {
+                    throw new \RuntimeException('crediting service down');
+                },
+            ],
+        ]);
+        $pdo = $this->sqlitePdo();
+        $tracker = new ConversionTracker($pdo, $config, $this->stubClicks($locked));
+
+        $result = $tracker->claim(deviceId: 'good-device', platform: 'ios', token: $token, now: $this->now());
+
+        $this->assertTrue($result['success']);
+        $status = $pdo->query("SELECT reward_status FROM referral_conversions WHERE click_id = 'click-1'")->fetchColumn();
+        $this->assertSame('failed', $status);
+    }
+
+    public function test_claim_leaves_reward_status_granted_when_on_claim_callback_succeeds(): void
+    {
+        $token = ClickToken::sign('click-1', $this->futureExpiry(), self::SECRET);
+        $locked = $this->baseClick([
+            'matched'           => true,
+            'matched_device_id' => ConversionTracker::hashDeviceId('good-device'),
+            'match_method'      => 'fingerprint',
+            'match_confidence'  => 92.5,
+        ]);
+        $config = new ReferralConfig([
+            'click_token_secret' => self::SECRET,
+            'rewards' => ['on_claim_callback' => function () { /* credits the account, no-op here */ }],
+        ]);
+        $pdo = $this->sqlitePdo();
+        $tracker = new ConversionTracker($pdo, $config, $this->stubClicks($locked));
+
+        $result = $tracker->claim(deviceId: 'good-device', platform: 'ios', token: $token, now: $this->now());
+
+        $this->assertSame(['success' => true, 'reward' => ['type' => 'credit', 'amount' => 500]], $result);
+        $status = $pdo->query("SELECT reward_status FROM referral_conversions WHERE click_id = 'click-1'")->fetchColumn();
+        $this->assertSame('granted', $status);
+    }
+
     public function test_resolve_device_id_hashes_consistently_with_what_lock_to_device_would_store(): void
     {
         // The exact bug caught while implementing #21: claim() compares its

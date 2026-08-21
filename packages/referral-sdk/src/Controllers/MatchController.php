@@ -42,7 +42,9 @@ class MatchController
             'fingerprint.screen_width'    => ['nullable', 'integer'],
             'fingerprint.screen_height'   => ['nullable', 'integer'],
             'fingerprint.timezone'        => ['nullable', 'string', 'max:100'],
-            'fingerprint.language'        => ['nullable', 'string', 'max:10'],
+            // 35, not 10: real device locale identifiers run longer than a
+            // bare BCP-47 primary tag — see decisions.md #23.
+            'fingerprint.language'        => ['nullable', 'string', 'max:35'],
         ]);
 
         $storedDeviceId = ConversionTracker::resolveDeviceId($data['device_id'], $this->config);

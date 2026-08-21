@@ -1,10 +1,12 @@
-import { createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { ReferralConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { referralConversions } from '../db/schema.js';
 import { getClickTokenSecret, verifyClickToken } from '../support/clickToken.js';
+import { resolveDeviceId } from '../support/deviceId.js';
 import type { ClickStore, MatchMethod } from './clickStore.js';
+
+export { hashDeviceId, resolveDeviceId } from '../support/deviceId.js';
 
 export interface ClaimInput {
   deviceId: string;
@@ -113,7 +115,7 @@ export class ConversionTracker {
       throw err;
     }
 
-    const reward = await this.distributeReward(click.referralCode, input.userId ?? null);
+    const reward = await this.distributeReward(verified.clickId, click.referralCode, input.userId ?? null);
     return { success: true, reward };
   }
 
@@ -126,14 +128,37 @@ export class ConversionTracker {
     return rows.length > 0;
   }
 
-  private async distributeReward(referralCode: string, userId: string | null): Promise<Reward> {
+  /**
+   * The conversion row is already committed by the time this runs (it has
+   * to be — the dedup/unique-device guarantee needs to land before
+   * crediting anything). So a failing `on_claim_callback` (e.g. Sparkle's
+   * own account-crediting call is down) must not throw past that: it used
+   * to, leaving a device permanently marked "converted" with no reward
+   * and the client staring at a misleading 500. Caught here instead —
+   * logged, the row marked `reward_status = 'failed'` (defaults to
+   * `'granted'` optimistically on insert) for reconciliation, and
+   * `claim()` still reports success, because the conversion itself — "this
+   * device used this code, once" — is real and final regardless of
+   * whether the reward side effect landed. See decisions.md #23.
+   */
+  private async distributeReward(clickId: string, referralCode: string, userId: string | null): Promise<Reward> {
     if (!this.config.rewards.enabled) {
       return { type: 'none', amount: 0 };
     }
 
-    // Optional project-supplied callback for actually crediting accounts.
     if (this.config.rewards.on_claim_callback) {
-      await this.config.rewards.on_claim_callback(referralCode, userId, this.config.rewards);
+      try {
+        await this.config.rewards.on_claim_callback(referralCode, userId, this.config.rewards);
+      } catch (err) {
+        console.error(
+          `on_claim_callback failed for click ${clickId} (code ${referralCode}) — conversion already recorded, reward not confirmed granted. Marked reward_status='failed' for reconciliation.`,
+          err,
+        );
+        await this.db
+          .update(referralConversions)
+          .set({ rewardStatus: 'failed' })
+          .where(eq(referralConversions.clickId, clickId));
+      }
     }
 
     return {
@@ -141,23 +166,6 @@ export class ConversionTracker {
       amount: this.config.rewards.referee_reward,
     };
   }
-}
-
-/** One-way, for dedup only. Never reversed. */
-export function hashDeviceId(deviceId: string): string {
-  return createHash('sha256').update(deviceId).digest('hex');
-}
-
-/**
- * Applies `hash_device_ids` consistently everywhere a device_id is
- * persisted — `referral_clicks.matched_device_id` (see ClickStore.lockToDevice,
- * called from routes/referral.ts) and `referral_conversions.device_id`
- * (this file) both need to agree on the same stored form, or claim()'s
- * lock-ownership check (`matchedDeviceId !== storedDeviceId`) compares a
- * hash against a raw value and never matches.
- */
-export function resolveDeviceId(deviceId: string, config: ReferralConfig): string {
-  return config.hashDeviceIds ? hashDeviceId(deviceId) : deviceId;
 }
 
 function isUniqueViolation(err: unknown): boolean {

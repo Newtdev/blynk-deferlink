@@ -987,3 +987,107 @@ internal dots surviving intact) and a full mock-backend E2E using the
 actual request shapes `api.ts` sends — a deterministic click → claim flow
 that never calls `/match`, a probabilistic click → match → claim flow, and
 the fraud-rejection cases from the backend PR.
+
+---
+
+## 23. Tier 1 hardening — client IP trust, table growth/privacy, reward atomicity, PHP/Node parity — Done
+
+**Problem.** #21/#22 fixed the critical `/claim`-trust finding; six real,
+lower-urgency items from the same reviews were explicitly deferred at the
+time. Backend-only (Node + PHP), no web/mobile SDK changes.
+
+**1. Client IP trust.** `clientIp()` (Node) hand-parsed
+`X-Forwarded-For` itself, taking the leftmost entry, with
+`app.set('trust proxy', true)` — trusting *every* hop, including a
+client's own spoofed header. Fixed by using Express's own trusted-proxy
+mechanism correctly: new `TRUST_PROXY_HOPS` env var (default `0` —
+secure-by-default, nothing trusted, degrades IP-match/rate-limit
+granularity but is never spoofable), `app.set('trust proxy', hops)`, and
+`clientIp()` now just reads Express's own computed `req.ip`. **Vercel
+deploys need `TRUST_PROXY_HOPS=1`** — set explicitly in the README and on
+the live deployment, not inferred. PHP's `$request->ip()` was never
+exploitable the same way (Laravel's own mechanism, not hand-rolled), but
+its safety was — and still is — entirely conditional on the host app's
+own `TrustProxies` middleware being configured correctly, which nothing
+in this SDK previously documented; now it does.
+
+**2. Table growth + privacy.** `referral_match_attempts` and (before
+#21/#22's atomic-upsert redesign, and still after it) the rate-limit-hits
+table grew unbounded forever — only `referral_clicks` had a cleanup path.
+`referral_match_attempts` also stored the raw, unhashed `device_id`,
+contradicting `hash_device_ids`' own documented promise. Fixed: extracted
+`hashDeviceId`/`resolveDeviceId` out of `conversionTracker.ts` into
+`support/deviceId.ts` (PHP: `Support\DeviceId`) so `FingerprintMatcher`
+can use the same hashing `ConversionTracker` already did, instead of
+reaching into a sibling service for it. New `RetentionService` purges both
+tables past `retention_days` (default 30), wired into `/cleanup` alongside
+the existing `deleteExpired()`. PHP has neither table (`referral_match_attempts`
+doesn't exist there; rate limiting is Laravel's own cache-backed
+`RateLimiter`, not a DB table) — this item was Node-only, confirmed during
+implementation rather than assumed.
+
+**3. Reward atomicity.** The conversion row was inserted, *then*
+`on_claim_callback` was called — if the callback threw (e.g. Sparkle's own
+account-crediting call down), the exception propagated past an
+already-committed row: the device was permanently marked converted, no
+reward was ever granted, and the client got a misleading 500 with no way
+to tell what actually happened (a retry just hits `already_claimed`).
+Fixed: new `reward_status` column (`'granted'` default, `'failed'` on a
+caught callback exception) on `referral_conversions` in both backends.
+`claim()` still returns success either way — the dedup guarantee is real
+and final regardless of whether the reward side effect landed — with
+`'failed'` rows queryable for manual/scripted reconciliation. Deliberately
+no outbox/retry queue; that's real scope beyond a status column.
+
+**4. PHP `language` parity.** PHP's `language` column was `VARCHAR(10)`
+and `languageMatches()` split only on `-`; Node's was `VARCHAR(35)`
+(real device locale identifiers run longer — iOS Simulator reports
+`en_US_POSIX`, 11 chars) and split on `[-_]`. A real value Node accepted
+was silently rejected by PHP's own Laravel validation, and even when it
+fit, an underscore-separated locale that matched on Node simply didn't on
+PHP — same input, different match outcome, purely a function of which
+backend was deployed. Notably: `packages/referral-sdk/README.md`'s
+Matching section already *claimed* underscore-splitting worked, from an
+earlier doc pass that got ahead of the actual code — this fix is what
+makes that claim true for the first time. Fixed: column widened to
+`VARCHAR(35)` (migration + `database/schema.sql`), validation bumped to
+`max:35`, `languageMatches()` splits on `[-_]` to match Node exactly. No
+live PHP database to migrate — nothing has been deployed against the PHP
+backend.
+
+**5. Constant-time secret comparison.** `/cleanup` and `/analytics`'s
+shared-secret check used plain `===`. These two headers are the entire
+authorization mechanism for a destructive endpoint and a data-exposing
+one. Fixed with `crypto.timingSafeEqual` (length-checked first), same
+pattern `support/clickToken.ts` already used. Node-only — PHP has no
+equivalent shared-secret HTTP endpoints.
+
+**6. PHP/Node parity fixture.** Both drift bugs above (and the earlier
+scoring-weight drift in #21/#22) shipped and went live before an outside
+review caught them — neither test suite's hardcoded cases, which only
+ever exercised each backend against itself, could have caught either. New
+`docs/fixtures/fingerprint-match-cases.json` — seven `{stored, incoming,
+now, expected_score}` cases, including the exact underscore-locale
+scenario — loaded by both `fingerprintMatcher.parity.test.ts` (Node, new
+file) and `FingerprintMatcherTest.php`'s new
+`test_parity_fixture_matches_node()`, alongside each suite's existing
+hardcoded cases, not replacing them. Deliberately fixture-only, no CI —
+mechanically catches drift whenever someone runs both suites, without
+standing up this repo's first CI workflow for it.
+
+**Caught building the fixture itself:** two of the seven hand-written
+cases had wrong expected scores on the first pass (one accidentally let
+device-model match when the case was meant to isolate IP-only credit;
+one used the match window's *edge* — where recency is fully decayed —
+instead of its *midpoint* for a "half credit" case). Verified by hand
+before trusting either suite's fixture run — the exact discipline this
+whole file keeps arguing for, applied to itself.
+
+**Verification.** Full Node test suite + `tsc --noEmit`; PHP verified by
+hand (no PHPUnit runner in this environment) — `php -l` across every
+changed file, the fixture manually loaded and scored via a standalone
+script (all 7 cases passing, including the underscore-locale case that
+would have failed before this fix). Migration pushed to the live Neon
+database and re-verified via direct query and a real `/claim` call after
+merge, not assumed from a successful deploy — the exact mistake made (and
+caught) deploying #22.
