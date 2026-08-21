@@ -94,13 +94,18 @@ other.
 
 - The mobile example needs an **Expo dev build** (`expo run:ios` /
   `expo run:android`), not Expo Go, because `react-native-device-info` and
-  AsyncStorage include native code.
+  `react-native-play-install-referrer` include native code. (The SDK itself
+  persists nothing to disk — no AsyncStorage or other storage dependency at
+  all; see [packages/referral-mobile/README.md](packages/referral-mobile/README.md#storage).)
 - On a **physical device**, `localhost` won't reach your machine — set `API` in
   `examples/mobile/App.tsx` to your computer's LAN IP.
-- `react-native-play-install-referrer` is optional; without it Android falls
-  back to fingerprint matching like iOS. (This SDK previously referenced a
-  package called `react-native-android-install-referrer`, which turned out to
-  not exist on npm at all — see [packages/referral-mobile/README.md](packages/referral-mobile/README.md).)
+- `react-native-play-install-referrer` is **required** for Android, not
+  optional — Android's deterministic recovery path depends on it, and
+  `useReferralCode()` throws a clear error if it's missing rather than
+  silently falling back to the weaker fingerprint-matching path. (This SDK
+  previously referenced a package called `react-native-android-install-referrer`,
+  which turned out to not exist on npm at all — see
+  [packages/referral-mobile/README.md](packages/referral-mobile/README.md).)
 
 ---
 

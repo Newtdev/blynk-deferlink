@@ -5,8 +5,9 @@ referral landing page, captures a browser fingerprint, detects the platform,
 tries to open an already-installed app, and redirects to the right store — with
 the referral code embedded for Android's Install Referrer.
 
-Pairs with `sparkle/referral-sdk` (PHP backend) and `@sparkle/referral-mobile`
-(React Native).
+Pairs with `sparkle/referral-sdk` (PHP) or `@sparkle/referral-sdk-node`
+(Node/Express) — either backend, same API contract — and
+`@sparkle/referral-mobile` (React Native).
 
 ## Install
 
@@ -55,11 +56,25 @@ visitor will install on. Everything is themeable via props:
   referrerName="Ada"
   logo="/logo.svg"
   title="You've been invited"
+  subtitle="Ada wants you to join. Sign up to claim your bonus."
   ctaText="Download the app"
   countdownSeconds={3}
   theme={{ primaryColor: '#6C63FF', radius: '14px' }}
+  onAppOpen={() => console.log('handed off to the installed app')}
+  onRedirect={(platform) => console.log('falling back to the store for', platform)}
 />
 ```
+
+`subtitle` defaults to a `referrerName`-aware sentence if omitted.
+`countdownSeconds` defaults to **8s on iOS, 3s on Android** if left unset —
+not a flat value for both. iOS gets the longer window deliberately: tapping
+the CTA directly is the only path that can carry the clipboard handoff (see
+"Custom UI with hooks" below), so a longer countdown biases users toward
+noticing and tapping instead of just waiting it out; Android recovers
+deterministically via the Play Store referrer param either way, so there's
+no reason to bias it the same way. Pass `countdownSeconds` explicitly to
+override either platform's default uniformly. See
+[docs/decisions.md #20](../../docs/decisions.md).
 
 Styles are injected once and scoped under `.rf-*` class names — override them in
 your own CSS for full control, or restyle via the `theme` prop.
@@ -72,6 +87,7 @@ Skip the pre-built page and compose your own:
 import {
   useReferralClick,
   usePlatformDetect,
+  useReferralConfig,
   getStoreUrl,
   getAppSchemeUrl,
 } from '@sparkle/referral-web';
@@ -136,7 +152,7 @@ most in-app browsers.
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `apiEndpoint` | yes | Base URL of the PHP backend (e.g. `.../api`). |
+| `apiEndpoint` | yes | Base URL of the referral backend — PHP or Node, same API contract (e.g. `.../api`). |
 | `appScheme` | yes | Custom scheme without `://` (e.g. `sparkleapp`). |
 | `androidPackage` | yes* | Android application id — used to compose the Play Store URL. |
 | `iosAppId` | yes* | Numeric App Store id — used to compose the App Store URL. |

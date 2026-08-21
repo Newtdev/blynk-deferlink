@@ -5,8 +5,9 @@ it recovers the referral code the user came in with — deterministically on
 Android via the Play Install Referrer, and via fingerprint matching on iOS — then
 hands it to your signup flow and records the conversion.
 
-Pairs with `sparkle/referral-sdk` (PHP backend) and `@sparkle/referral-web`
-(landing page).
+Pairs with `sparkle/referral-sdk` (PHP) or `@sparkle/referral-sdk-node`
+(Node/Express) — either backend, same API contract — and
+`@sparkle/referral-web` (landing page).
 
 > **Looking for app store IDs/links?** They don't belong here — this package
 > only ever runs after your app is already installed, so it never needs to
@@ -21,7 +22,7 @@ This package isn't published to npm yet. Until it is, install it straight
 from GitHub — same pattern as `react-native-smileid-wrapper`:
 
 ```bash
-npm install github:Newtdev/blynk-referral#mobile-release react-native-device-info
+npm install github:Newtdev/blynk-deferlink#mobile-release react-native-device-info
 
 # Required if you build for Android — see below for why it's not optional:
 npm install react-native-play-install-referrer
@@ -31,7 +32,7 @@ cd ios && pod install
 
 npm reads the package's real name (`@sparkle/referral-mobile`) out of its
 `package.json`, so it lands in your `dependencies` as
-`"@sparkle/referral-mobile": "github:Newtdev/blynk-referral#mobile-release"`
+`"@sparkle/referral-mobile": "github:Newtdev/blynk-deferlink#mobile-release"`
 and imports work exactly like a normal published package — no source changes
 needed later.
 
