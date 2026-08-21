@@ -15,6 +15,7 @@ final class ReferralConfig
     public readonly float $minConfidence;
     public readonly int $rateLimitClicksPerHour;
     public readonly int $rateLimitMatchesPerDay;
+    public readonly int $rateLimitClaimsPerHour;
     public readonly bool $hashDeviceIds;
 
     /** @var array<string,int> */
@@ -30,6 +31,7 @@ final class ReferralConfig
         $this->minConfidence          = (float) ($c['min_confidence'] ?? 70);
         $this->rateLimitClicksPerHour = (int) ($c['rate_limit_clicks_per_hour'] ?? 10);
         $this->rateLimitMatchesPerDay = (int) ($c['rate_limit_matches_per_day'] ?? 5);
+        $this->rateLimitClaimsPerHour = (int) ($c['rate_limit_claims_per_hour'] ?? 10);
         $this->hashDeviceIds          = (bool) ($c['hash_device_ids'] ?? true);
 
         $scoring = (array) ($c['scoring'] ?? []);

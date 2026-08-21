@@ -21,6 +21,10 @@ CREATE TABLE IF NOT EXISTS referral_clicks (
     matched BOOLEAN DEFAULT FALSE,
     matched_device_id VARCHAR(255) NULL,        -- Locked after match
     matched_at TIMESTAMP NULL,
+    -- What actually matched it, recorded at lock time — /claim reads these
+    -- instead of trusting a claim request's own say-so (decisions.md #21).
+    match_method ENUM('install_referrer', 'fingerprint', 'clipboard') NULL,
+    match_confidence DECIMAL(5,2) NULL,
 
     -- Meta
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

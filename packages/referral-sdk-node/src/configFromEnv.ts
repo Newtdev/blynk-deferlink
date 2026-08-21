@@ -15,6 +15,7 @@ export function configFromEnv(): ReferralConfigInput {
     min_confidence: numOr(process.env.REFERRAL_MIN_CONFIDENCE, 70),
     rate_limit_clicks_per_hour: numOr(process.env.REFERRAL_RATE_LIMIT_CLICKS_PER_HOUR, 10),
     rate_limit_matches_per_day: numOr(process.env.REFERRAL_RATE_LIMIT_MATCHES_PER_DAY, 5),
+    rate_limit_claims_per_hour: numOr(process.env.REFERRAL_RATE_LIMIT_CLAIMS_PER_HOUR, 10),
     hash_device_ids: boolOr(process.env.REFERRAL_HASH_DEVICE_IDS, true),
     rewards: {
       enabled: boolOr(process.env.REFERRAL_REWARDS_ENABLED, true),

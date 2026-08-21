@@ -16,6 +16,7 @@ use Symfony\Component\HttpFoundation\Response;
  *   Route middleware alias: 'referral.throttle'
  *   Usage: ->middleware('referral.throttle:click')  // per-IP, per-hour
  *          ->middleware('referral.throttle:match')  // per-device, per-day
+ *          ->middleware('referral.throttle:claim')  // per-device, per-hour
  */
 class ReferralRateLimit
 {
@@ -49,6 +50,15 @@ class ReferralRateLimit
                 'referral:match:' . sha1($deviceId),
                 $this->config->rateLimitMatchesPerDay,
                 86400,
+            ];
+        }
+
+        if ($bucket === 'claim') {
+            $deviceId = (string) $request->input('device_id', $request->ip());
+            return [
+                'referral:claim:' . sha1($deviceId),
+                $this->config->rateLimitClaimsPerHour,
+                3600,
             ];
         }
 

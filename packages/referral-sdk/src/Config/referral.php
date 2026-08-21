@@ -15,8 +15,10 @@ return [
     |--------------------------------------------------------------------------
     | Minimum confidence
     |--------------------------------------------------------------------------
-    | Lowest fingerprint score (0-100) accepted as a match. IP alone is worth
-    | 40, so 70 forces at least IP + one strong signal.
+    | Lowest fingerprint score (0-100) accepted as a match. IP alone (25) plus
+    | a fresh recency credit (15) still isn't enough on its own — 70 forces
+    | at least one more independent signal (device model, screen, timezone,
+    | or language) to agree too.
     */
     'min_confidence' => 70,
 
@@ -27,6 +29,8 @@ return [
     */
     'rate_limit_clicks_per_hour' => 10,
     'rate_limit_matches_per_day' => 5,
+    // Previously unthrottled entirely — see docs/decisions.md #21.
+    'rate_limit_claims_per_hour' => 10,
 
     /*
     |--------------------------------------------------------------------------
@@ -51,13 +55,20 @@ return [
     |--------------------------------------------------------------------------
     | Scoring weights (must sum to 100)
     |--------------------------------------------------------------------------
+    | ip_match was 40 before `recency` existed; lowered to 25 once recency
+    | started picking up the slack — a network switch between click and
+    | install no longer fails the match outright on its own. This file used
+    | to omit `recency` entirely, which silently fell back to
+    | ReferralConfig's own default (15) on top of the old ip_match=40,
+    | pushing the real ceiling to 115 instead of 100 — see decisions.md #21.
     */
     'scoring' => [
-        'ip_match'          => 40,
+        'ip_match'          => 25,
         'device_model'      => 25,
         'screen_dimensions' => 15,
         'timezone'          => 10,
         'language'          => 10,
+        'recency'           => 15,
     ],
 
     /*
