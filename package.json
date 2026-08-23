@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "description": "Deferred deep linking referral system — PHP backend, React web SDK, React Native SDK, and runnable examples.",
+  "engines": {
+    "node": ">=18.14"
+  },
   "workspaces": [
     "packages/referral-web",
     "packages/referral-mobile",
