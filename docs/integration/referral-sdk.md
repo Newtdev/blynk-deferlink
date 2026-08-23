@@ -1,4 +1,4 @@
-# Integrating `sparkle/referral-sdk` (PHP backend)
+# Integrating `blynk-deferlink/referral-sdk` (PHP backend)
 
 Step-by-step setup for the PHP backend — one of two interchangeable
 backends (see [`referral-sdk-node.md`](referral-sdk-node.md) for the
@@ -18,7 +18,7 @@ For API/config reference beyond what's covered here, see
 ## 1. Install
 
 ```bash
-composer require sparkle/referral-sdk
+composer require blynk-deferlink/referral-sdk
 ```
 
 ## 2a. Laravel setup
@@ -147,7 +147,7 @@ pollute real analytics.
 
 ## 8. Point the web/mobile SDKs here
 
-Set `apiEndpoint` in `@sparkle/referral-web`'s and `@sparkle/referral-mobile`'s
+Set `apiEndpoint` in `@blynk-deferlink/referral-web`'s and `@blynk-deferlink/referral-mobile`'s
 config to this backend's base URL (e.g. `https://your-app.test/api`) — see
 [`referral-web.md`](referral-web.md) and
 [`referral-mobile.md`](referral-mobile.md).

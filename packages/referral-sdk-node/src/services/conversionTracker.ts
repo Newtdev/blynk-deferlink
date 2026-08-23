@@ -131,8 +131,8 @@ export class ConversionTracker {
   /**
    * The conversion row is already committed by the time this runs (it has
    * to be — the dedup/unique-device guarantee needs to land before
-   * crediting anything). So a failing `on_claim_callback` (e.g. Sparkle's
-   * own account-crediting call is down) must not throw past that: it used
+   * crediting anything). So a failing `on_claim_callback` (e.g. your own
+   * account-crediting call is down) must not throw past that: it used
    * to, leaving a device permanently marked "converted" with no reward
    * and the client staring at a misleading 500. Caught here instead —
    * logged, the row marked `reward_status = 'failed'` (defaults to

@@ -159,11 +159,11 @@ value (a password, a copied link from somewhere unrelated) is trivially
 rejected rather than misread as a match:
 
 ```
-sparkle_ref:v1:<code>:<issued_unix_ts>
+deferlink_ref:v1:<code>:<issued_unix_ts>
 ```
 
 Mobile-side validation before trusting it:
-1. Starts with `sparkle_ref:v1:` — otherwise it's not ours, ignore.
+1. Starts with `deferlink_ref:v1:` — otherwise it's not ours, ignore.
 2. `issued_unix_ts` is within the configured match window (same window
    fingerprint matching already uses) — otherwise treat as stale, ignore.
 3. `<code>` passes the existing `code_validator` (already configurable in
@@ -205,7 +205,7 @@ Mobile-side validation before trusting it:
     `<ReferralPasteButton onCode={onClipboardCode} />` by the app.
   - Clipboard *is* cleared (`UIPasteboard.general.items = []`) right after
     a successful read, as planned — done narrowly, only when the pasted
-    text actually starts with the `sparkle_ref:v1:` prefix. That guard
+    text actually starts with the `deferlink_ref:v1:` prefix. That guard
     matters: `UIPasteControl` enables itself whenever *any* string is on
     the pasteboard, not specifically our payload format, so clearing
     unconditionally would risk wiping a user's unrelated clipboard content

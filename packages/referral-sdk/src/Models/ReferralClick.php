@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Sparkle\Referral\Models;
+namespace BlynkDeferlink\Referral\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
 /**
  * Read/query convenience for Laravel consumers. Writes go through
- * {@see \Sparkle\Referral\Services\ClickStore} to keep one code path.
+ * {@see \BlynkDeferlink\Referral\Services\ClickStore} to keep one code path.
  *
  * @property string $click_id
  * @property string $referral_code
