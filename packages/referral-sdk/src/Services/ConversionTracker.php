@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Sparkle\Referral\Services;
+namespace BlynkDeferlink\Referral\Services;
 
 use PDO;
 use RuntimeException;
-use Sparkle\Referral\Support\ClickToken;
-use Sparkle\Referral\Support\DeviceId;
-use Sparkle\Referral\Support\ReferralConfig;
+use BlynkDeferlink\Referral\Support\ClickToken;
+use BlynkDeferlink\Referral\Support\DeviceId;
+use BlynkDeferlink\Referral\Support\ReferralConfig;
 
 /**
  * Records referral conversions and distributes rewards. Enforces one referral
@@ -146,7 +146,7 @@ final class ConversionTracker
     /**
      * The conversion row is already committed by the time this runs (it
      * has to be — the dedup/unique-device guarantee needs to land before
-     * crediting anything). So a failing callback (e.g. Sparkle's own
+     * crediting anything). So a failing callback (e.g. your own
      * account-crediting call is down) must not throw past that: it used
      * to, leaving a device permanently marked "converted" with no reward
      * and the client staring at a misleading 500. Caught here instead —

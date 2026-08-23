@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Sparkle\Referral\Services;
+namespace BlynkDeferlink\Referral\Services;
 
 use PDO;
-use Sparkle\Referral\Support\ReferralConfig;
-use Sparkle\Referral\Support\UserAgentParser;
+use BlynkDeferlink\Referral\Support\ReferralConfig;
+use BlynkDeferlink\Referral\Support\UserAgentParser;
 
 /**
  * Scores an incoming device fingerprint against stored clicks and returns the

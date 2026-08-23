@@ -493,7 +493,7 @@ have caught:
 **Verification, this time for real.** Built and ran `examples/mobile` on
 an iOS 18.5 simulator with all three theming variants on screen; seeded
 the simulator clipboard via `xcrun simctl pbcopy` with a valid
-`sparkle_ref:v1:` payload; watched the control's enabled state react live
+`deferlink_ref:v1:` payload; watched the control's enabled state react live
 to that pasteboard change; tapped it and confirmed the full round trip
 (`onPaste` → `parseClipboardReferralPayload` → `onCode` →
 `onClipboardCode` → `useReferralCode()`) landed `code: PASTE-99, method:
@@ -549,7 +549,7 @@ open.
 nothing.** Separate cause, an API ceiling rather than a bug:
 `UIPasteConfiguration(forAccepting: String.self)` enables the control for
 *any* string on the pasteboard, not specifically a valid
-`sparkle_ref:v1:` payload — Apple gives no way to gate paste-eligibility
+`deferlink_ref:v1:` payload — Apple gives no way to gate paste-eligibility
 on content, only on type. The simulator shares the Mac's general
 pasteboard, so unrelated leftover text (including from prior
 `simctl pbcopy` testing) makes the control look tappable. Tapping it
@@ -628,7 +628,7 @@ not an SDK code fix.
 ## 17. `referral-web-demo`'s Vercel deploys were silently broken — Done
 
 **Problem, found trying to ship debug logging.** `examples/web/vite.config.ts`
-resolves `@sparkle/referral-web` via an alias straight to
+resolves `@blynk-deferlink/referral-web` via an alias straight to
 `packages/referral-web/src/index.ts` (deliberate — ships from source, no
 build step, same pattern as the mobile package). The Vercel project's
 Root Directory had never been explicitly set, which meant every CLI
@@ -947,7 +947,7 @@ claim a token whose click was already locked to the first).
 client-side work from #21 — that PR's redeem-round-trip client code never
 merged, so there's no history to unwind, just the corrected version:
 
-- `@sparkle/referral-web`'s `getStoreUrl()` embeds `token` (not `click_id`)
+- `@blynk-deferlink/referral-web`'s `getStoreUrl()` embeds `token` (not `click_id`)
   in the Android referrer param once click registration resolves;
   `writeClipboardReferral()` embeds it in the clipboard payload the same
   way. `useReferralClick()`'s `waitForClick()` now resolves the token.
@@ -955,7 +955,7 @@ merged, so there's no history to unwind, just the corrected version:
   `e.preventDefault()` fix (needed so an async `onClick` handler actually
   gets to finish before the anchor's own `href` navigates — see #21's
   original writeup) are unaffected by this pivot and carry over unchanged.
-- `@sparkle/referral-mobile`'s `platform/android.ts`: `recoverAndroid()`
+- `@blynk-deferlink/referral-mobile`'s `platform/android.ts`: `recoverAndroid()`
   now returns immediately once the Install Referrer yields a code + token
   — no network call, no callback, full stop. Only falls through to
   fingerprint matching when the referrer is empty or has no token (older
@@ -1091,3 +1091,105 @@ would have failed before this fix). Migration pushed to the live Neon
 database and re-verified via direct query and a real `/claim` call after
 merge, not assumed from a successful deploy — the exact mistake made (and
 caught) deploying #22.
+
+---
+
+## 24. De-branding for open-source release — LICENSE, package rename, and a real production-URL leak — Done
+
+**Problem.** This project was originally built inside Sparkle's own
+namespace — npm packages under `@sparkle/*`, the Composer package as
+`sparkle/referral-sdk`, the PHP namespace as `Sparkle\Referral`, and a
+scattering of Sparkle-specific values (store links, bundle IDs, a wire
+prefix) baked in as if they were the only consumer that would ever exist.
+That was reasonable while this was Sparkle-internal tooling. It stops
+being reasonable the moment the repo is public: shipping someone else's
+trademark as your own package scope isn't just a naming nitpick, and one
+of the "Sparkle-specific values" turned out to be an actual live
+production URL — see below.
+
+Separately: Sparkle now has its own independent copy of this project
+(`sparkle-nigeria/Referral-defer-link`, pushed as a one-time snapshot,
+not a live mirror) to build on, PHP-only, decoupled from whatever happens
+here. That made this the right moment to do the rename — nothing here
+needs to stay `@sparkle/*` for Sparkle's own sake anymore.
+
+**Decision.** MIT license (this is independently-owned work — built
+unprompted, outside assigned duties, not part of a task, confirmed
+against the actual employment contract, which has no IP-assignment
+clause). New scope: `@blynk-deferlink/*` for the three npm packages,
+`blynk-deferlink/referral-sdk` for Composer, `BlynkDeferlink\Referral` for
+the PHP namespace — all matching the repo's own name, so there's no
+separate identity to invent or keep in sync.
+
+**What actually shipped:**
+
+- `LICENSE` (MIT) and `CONTRIBUTING.md` added at the repo root — this
+  project had neither, meaning the repo being public didn't actually
+  grant anyone the legal right to use it.
+- `@sparkle/referral-web` → `@blynk-deferlink/referral-web`,
+  `@sparkle/referral-mobile` → `@blynk-deferlink/referral-mobile`,
+  `@sparkle/referral-sdk-node` → `@blynk-deferlink/referral-sdk-node`,
+  `sparkle/referral-sdk` → `blynk-deferlink/referral-sdk`, and the PHP
+  namespace throughout every file that declared or imported it —
+  mechanical, verified by a full `php -l` sweep plus an actual runtime
+  smoke test (not just syntax) instantiating `FingerprintMatcher` and
+  `ClickToken` under the new namespace.
+- **A real finding, not just a rename:** `packages/referral-mobile/src/api.ts`
+  hardcoded `DEFAULT_API_ENDPOINT` to Sparkle's actual live production
+  Vercel URL, silently used by any consumer who didn't set `apiEndpoint`
+  explicitly. That's not a branding issue, that's a stranger's app
+  quietly sending real device fingerprints to Sparkle's production
+  backend by default. Fixed by removing the default entirely —
+  `apiEndpoint` is now a required config field, throwing a clear error at
+  call time if it's missing, matching this codebase's existing "fail
+  loud, not silent" pattern (`CLICK_TOKEN_SECRET`, `click_token_secret`).
+- The clipboard hand-off wire prefix (`sparkle_ref:v1:` → `deferlink_ref:v1:`)
+  renamed on both sides that read/write it — the web SDK
+  (`clipboardHandoff.ts`), the mobile SDK's JS parser
+  (`clipboardPayload.ts`), *and* the native Swift side
+  (`ReferralPasteControlView.swift`), which keeps its own separate copy
+  of the same constant specifically so the native paste-control view
+  doesn't need to bridge into JS for a plain string comparison. Missing
+  the Swift copy would have silently broken the deterministic iOS path
+  the exact way a stale hardcoded value always does here — caught by
+  doing a full case-insensitive re-sweep for "sparkle" across every
+  tracked file rather than trusting the first pass's file list.
+- Example app config (`examples/web/.env.production`, `examples/web/src/App.tsx`,
+  `examples/mobile/App.tsx`) — real Sparkle App Store/Play Store links
+  and a real Sparkle Android package id replaced with clearly-fake
+  placeholders; the mobile example's API endpoint switched from
+  Sparkle's live backend back to the local mock (`http://localhost:8787/api`),
+  matching what the root README's "Quick start" actually promises.
+- Illustrative example values with no functional role
+  (`sparkleapp` → `myapp`, `com.sparkle.app`/`com.sparkle.example` →
+  `com.example.app`, doc-comment example URLs) swept for consistency —
+  lower stakes than the items above, but a repo that's 90% de-branded
+  still reads as somebody else's internal tool with the serial numbers
+  half-filed off.
+- `docs/decisions.md` and `docs/ios-deterministic-deferred-deep-linking.md`
+  were **not** rewritten wholesale — both are historical logs, and most of
+  their Sparkle mentions describe what was actually true when those
+  decisions were made ("Sparkle's own backend," "Sparkle's closed
+  testing"). The one exception: literal `sparkle_ref:v1:` format-string
+  mentions were updated to `deferlink_ref:v1:`, since those describe the
+  *current* wire format, not a past event — leaving them stale would make
+  the docs factually wrong about what the code does today, which is a
+  different failure mode than "old context."
+
+**Not done, deliberately out of scope for this pass.** No CI, no
+`CODE_OF_CONDUCT.md`, no `SECURITY.md`, no issue/PR templates — the
+essentials (license, description, contributing guide) were the explicit
+scope; the rest can follow later without blocking the repo from being
+legally usable in the meantime. GitHub's repo description field also
+isn't set from here — no `gh` CLI or API auth available in this
+environment — so that's a manual step left for whoever has dashboard
+access.
+
+**Verification.** Full Node test suite + `tsc --noEmit` across all three
+JS/TS packages (`referral-web`, `referral-mobile`, `referral-sdk-node`);
+`php -l` across every changed PHP file plus a real runtime smoke test
+under the new namespace; a full markdown link-check across every `.md`
+file in the repo (only broken links found were inside vendored CocoaPods
+READMEs, not ours); `npm install` to regenerate `package-lock.json`
+against the renamed packages, confirmed zero remaining `@sparkle`
+references anywhere in it afterward.

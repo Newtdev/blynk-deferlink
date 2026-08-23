@@ -14,16 +14,18 @@ import {
   collectFingerprint,
   useReferralCode,
   type ReferralConfig,
-} from '@sparkle/referral-mobile';
+} from '@blynk-deferlink/referral-mobile';
 
-// Pointed at the live deployed backend (packages/referral-sdk-node on
-// Vercel) so the simulator exercises the real click → recover flow, not the
-// local mock. Swap back to 'http://localhost:8787/api' for offline dev.
-const API = 'https://referral-sdk-node.vercel.app/api';
+// Defaults to the mock backend (`npm run backend`, see the root README's
+// "Quick start"). Point this at a real deployed backend instead once you
+// have one — see docs/integration/referral-sdk.md or referral-sdk-node.md.
+// On a physical device, `localhost` won't reach your machine — use your
+// computer's LAN IP instead.
+const API = 'http://localhost:8787/api';
 
 const config: ReferralConfig = {
   apiEndpoint: API,
-  appScheme: 'sparkleapp',
+  appScheme: 'myapp',
   onCodeFound: (code, method) => console.log('onCodeFound', code, method),
   onNoCode: () => console.log('onNoCode'),
 };

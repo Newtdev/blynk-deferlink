@@ -27,11 +27,20 @@ async function postJson<T>(
   }
 }
 
-/** Production backend — used whenever a project doesn't override apiEndpoint. */
-export const DEFAULT_API_ENDPOINT = 'https://referral-sdk-node.vercel.app/api';
-
 export function createApi(config: ReferralConfig) {
-  const base = (config.apiEndpoint ?? DEFAULT_API_ENDPOINT).replace(/\/$/, '');
+  // Required, not optional, and no built-in default — this SDK ships with no
+  // backend of its own to fall back to. An earlier version defaulted this to
+  // a specific deployment's URL, which meant any consumer who forgot to set
+  // it would silently send real device data to somebody else's production
+  // backend instead of getting a clear error. Fail loudly here instead.
+  if (!config.apiEndpoint) {
+    throw new Error(
+      'apiEndpoint is required in ReferralConfig — point it at your own backend ' +
+        "(e.g. https://your-app.example.com/api). There's no default; see " +
+        'docs/integration/referral-sdk.md or referral-sdk-node.md for setting one up.',
+    );
+  }
+  const base = config.apiEndpoint.replace(/\/$/, '');
   const timeout = config.matchTimeoutMs ?? 5000;
 
   return {

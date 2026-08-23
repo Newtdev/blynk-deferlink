@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Sparkle\Referral\Models;
+namespace BlynkDeferlink\Referral\Models;
 
 use Illuminate\Database\Eloquent\Model;
 

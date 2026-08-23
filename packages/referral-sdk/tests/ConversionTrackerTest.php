@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Sparkle\Referral\Tests;
+namespace BlynkDeferlink\Referral\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Sparkle\Referral\Services\ClickStore;
-use Sparkle\Referral\Services\ConversionTracker;
-use Sparkle\Referral\Support\ClickToken;
-use Sparkle\Referral\Support\ReferralConfig;
+use BlynkDeferlink\Referral\Services\ClickStore;
+use BlynkDeferlink\Referral\Services\ConversionTracker;
+use BlynkDeferlink\Referral\Support\ClickToken;
+use BlynkDeferlink\Referral\Support\ReferralConfig;
 
 /**
  * Exercises the security property docs/decisions.md #21/#22 fix: claim()

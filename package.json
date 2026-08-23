@@ -1,5 +1,5 @@
 {
-  "name": "sparkle-referral",
+  "name": "blynk-deferlink",
   "version": "1.0.0",
   "private": true,
   "description": "Deferred deep linking referral system — PHP backend, React web SDK, React Native SDK, and runnable examples.",
@@ -12,9 +12,9 @@
   ],
   "scripts": {
     "backend": "node examples/mock-backend/server.js",
-    "backend:node-sdk": "npm --workspace @sparkle/referral-sdk-node run dev",
+    "backend:node-sdk": "npm --workspace @blynk-deferlink/referral-sdk-node run dev",
     "web": "npm --workspace examples/web run dev",
     "mobile": "npm --workspace examples/mobile run start",
-    "build:sdks": "npm --workspace @sparkle/referral-web run build && npm --workspace @sparkle/referral-mobile run build"
+    "build:sdks": "npm --workspace @blynk-deferlink/referral-web run build && npm --workspace @blynk-deferlink/referral-mobile run build"
   }
 }

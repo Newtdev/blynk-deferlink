@@ -1,5 +1,5 @@
 {
-    "name": "sparkle/referral-sdk",
+    "name": "blynk-deferlink/referral-sdk",
     "description": "Deferred deep linking referral SDK — click storage, fingerprint matching, and conversion tracking. Framework-agnostic core with optional Laravel integration.",
     "type": "library",
     "license": "MIT",
@@ -21,18 +21,18 @@
     },
     "autoload": {
         "psr-4": {
-            "Sparkle\\Referral\\": "src/"
+            "BlynkDeferlink\\Referral\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Sparkle\\Referral\\Tests\\": "tests/"
+            "BlynkDeferlink\\Referral\\Tests\\": "tests/"
         }
     },
     "extra": {
         "laravel": {
             "providers": [
-                "Sparkle\\Referral\\ReferralServiceProvider"
+                "BlynkDeferlink\\Referral\\ReferralServiceProvider"
             ]
         }
     },

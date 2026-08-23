@@ -11,7 +11,7 @@ import UIKit
 /// override.
 ///
 /// Deliberately minimal: this view's only job is "get me the pasted
-/// string." Payload validation (the `sparkle_ref:v1:` prefix, staleness
+/// string." Payload validation (the `deferlink_ref:v1:` prefix, staleness
 /// against the match window) lives in JS (see clipboardPayload.ts) where
 /// it's shared, testable logic instead of duplicated in Swift.
 @available(iOS 16.0, *)
@@ -33,7 +33,7 @@ class ReferralPasteControlView: UIView {
   private var pasteControl: UIPasteControl
   // Only used for the narrow "is it safe to clear the clipboard" check
   // below — full format/staleness validation stays in JS either way.
-  private let payloadPrefix = "sparkle_ref:v1:"
+  private let payloadPrefix = "deferlink_ref:v1:"
 
   override init(frame: CGRect) {
     pasteControl = UIPasteControl(configuration: UIPasteControl.Configuration())

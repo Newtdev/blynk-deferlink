@@ -1,4 +1,4 @@
-# Integrating `@sparkle/referral-mobile` (React Native)
+# Integrating `@blynk-deferlink/referral-mobile` (React Native)
 
 Step-by-step setup for the React Native SDK that recovers the referral
 code on first launch — deterministically on Android via the Play Install
@@ -37,13 +37,12 @@ changes.
 ## 2. Wrap your app
 
 ```tsx
-import { ReferralProvider } from '@sparkle/referral-mobile';
+import { ReferralProvider } from '@blynk-deferlink/referral-mobile';
 
 const referralConfig = {
-  // Defaults to the production backend — set this explicitly if you're
-  // pointing at a local/staging server instead (from the backend guide).
+  // Required — no default. Point this at the backend from step 1 above.
   apiEndpoint: 'https://your-backend.example.com/api',
-  appScheme: 'sparkleapp',
+  appScheme: 'myapp',
   matchTimeoutMs: 5000,
 };
 
@@ -68,7 +67,7 @@ this dependency at all — skip it if you're not shipping Android yet.)
 ## 4. Mount the hook on your signup/onboarding screen — not your app root
 
 ```tsx
-import { useReferralCode } from '@sparkle/referral-mobile';
+import { useReferralCode } from '@blynk-deferlink/referral-mobile';
 
 function SignupScreen() {
   const { code, loading, method, claim } = useReferralCode();
@@ -108,7 +107,7 @@ means iOS silently falls back to fingerprint matching with no error, no
 signal. Render it somewhere in your signup flow:
 
 ```tsx
-import { useReferralCode, ReferralPasteButton } from '@sparkle/referral-mobile';
+import { useReferralCode, ReferralPasteButton } from '@blynk-deferlink/referral-mobile';
 
 function SignupScreen() {
   const { code, claim, onClipboardCode } = useReferralCode();
@@ -138,7 +137,7 @@ store-installed build for Android) to exercise properly.
 2. Android: install via a Play Store test track link carrying that
    referrer data, or manually seed the Install Referrer for local testing
    per `react-native-play-install-referrer`'s own docs. iOS: visit your
-   `@sparkle/referral-web` landing page on the device first (writes the
+   `@blynk-deferlink/referral-web` landing page on the device first (writes the
    clipboard payload), then open the app and tap `ReferralPasteButton`.
 3. Confirm `useReferralCode()` returns the expected `code` and the right
    `method` (`install_referrer`, `fingerprint`, or `clipboard`).

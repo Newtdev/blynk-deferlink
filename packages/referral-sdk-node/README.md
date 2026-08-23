@@ -1,9 +1,9 @@
-# @sparkle/referral-sdk-node
+# @blynk-deferlink/referral-sdk-node
 
 A Node.js backend for the deferred deep linking referral system — a drop-in
-alternative to [`sparkle/referral-sdk`](../referral-sdk) (PHP) for projects
+alternative to [`blynk-deferlink/referral-sdk`](../referral-sdk) (PHP) for projects
 that would rather not run PHP. Same API contract, same matching algorithm,
-same DB schema shape, so `@sparkle/referral-web` and `@sparkle/referral-mobile`
+same DB schema shape, so `@blynk-deferlink/referral-web` and `@blynk-deferlink/referral-mobile`
 work against either backend unmodified.
 
 **New to this package?** [`docs/integration/referral-sdk-node.md`](../../docs/integration/referral-sdk-node.md)
@@ -35,7 +35,7 @@ invalid, forged, expired, or already-claimed-by-a-different-device token
 gets rejected with `unverified_claim` — this replaced trusting whatever the
 request body said happened (see
 [docs/decisions.md #21/#22](../../docs/decisions.md)).
-`@sparkle/referral-mobile` handles this automatically; if you're calling
+`@blynk-deferlink/referral-mobile` handles this automatically; if you're calling
 this API directly, thread `/click`'s (or `/match`'s) `token` straight
 through to `/claim` — read it locally off the Android referrer param / iOS
 clipboard payload for the deterministic paths, no extra network call
@@ -144,7 +144,7 @@ that as `apiEndpoint` in the web/mobile SDK configs.
 
 ## Configuration
 
-Defaults match `sparkle/referral-sdk` (PHP) — see
+Defaults match `blynk-deferlink/referral-sdk` (PHP) — see
 [src/config.ts](src/config.ts). The two shipped entrypoints
 (`src/server.ts`, `api/index.ts`) read these from environment variables via
 [src/configFromEnv.ts](src/configFromEnv.ts):
@@ -182,7 +182,7 @@ values — if you need either, don't use the shipped entrypoints; call
   system after a successful claim.
 
 ```ts
-import { createApp } from '@sparkle/referral-sdk-node';
+import { createApp } from '@blynk-deferlink/referral-sdk-node';
 
 const app = createApp({
   code_validator: (code) => myCampaignsTable.has(code),
@@ -234,12 +234,12 @@ ask if you want it added.
 ## Using it as a library instead of the standalone service
 
 ```bash
-npm install @sparkle/referral-sdk-node
+npm install @blynk-deferlink/referral-sdk-node
 ```
 
 ```ts
 import express from 'express';
-import { createApp } from '@sparkle/referral-sdk-node';
+import { createApp } from '@blynk-deferlink/referral-sdk-node';
 
 const referralApp = createApp({ min_confidence: 65 });
 
@@ -255,10 +255,10 @@ you want to wire your own routes instead of the Express router.
 ## Parity with the PHP SDK
 
 This package mirrors `packages/referral-sdk` field-for-field so a project
-can switch between them without touching `@sparkle/referral-web` or
-`@sparkle/referral-mobile`:
+can switch between them without touching `@blynk-deferlink/referral-web` or
+`@blynk-deferlink/referral-mobile`:
 
-| | PHP (`sparkle/referral-sdk`) | Node (`@sparkle/referral-sdk-node`) |
+| | PHP (`blynk-deferlink/referral-sdk`) | Node (`@blynk-deferlink/referral-sdk-node`) |
 |---|---|---|
 | Scoring weights & threshold | `src/Support/ReferralConfig.php` | `src/config.ts` |
 | Matching algorithm | `src/Services/FingerprintMatcher.php` | `src/services/fingerprintMatcher.ts` |
