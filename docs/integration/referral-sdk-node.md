@@ -1,4 +1,4 @@
-# Integrating `@sparkle/referral-sdk-node` (Node backend)
+# Integrating `@blynk-deferlink/referral-sdk-node` (Node backend)
 
 Step-by-step setup for the Node/Express backend — one of two interchangeable
 backends (see [`referral-sdk.md`](referral-sdk.md) for the PHP alternative;
@@ -86,7 +86,7 @@ yourself instead of using the shipped `src/server.ts`/`api/index.ts`
 entrypoints directly:
 
 ```ts
-import { createApp } from '@sparkle/referral-sdk-node';
+import { createApp } from '@blynk-deferlink/referral-sdk-node';
 
 const app = createApp({
   code_validator: (code) => myCampaignsTable.has(code),
@@ -141,7 +141,7 @@ took effect.
 
 ## 9. Point the web/mobile SDKs here
 
-Set `apiEndpoint` in `@sparkle/referral-web`'s and `@sparkle/referral-mobile`'s
+Set `apiEndpoint` in `@blynk-deferlink/referral-web`'s and `@blynk-deferlink/referral-mobile`'s
 config to `https://<project>.vercel.app/api` — see
 [`referral-web.md`](referral-web.md) and
 [`referral-mobile.md`](referral-mobile.md).

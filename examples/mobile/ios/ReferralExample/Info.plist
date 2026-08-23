@@ -27,8 +27,8 @@
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>sparkleapp</string>
-          <string>com.sparkle.example</string>
+          <string>myapp</string>
+          <string>com.example.app</string>
         </array>
       </dict>
       <dict>

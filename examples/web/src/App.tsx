@@ -1,16 +1,16 @@
-import { ReferralProvider, ReferralLanding } from '@sparkle/referral-web';
+import { ReferralProvider, ReferralLanding } from '@blynk-deferlink/referral-web';
 
 // Defaults to the local mock backend for `npm run dev`. Production builds
-// (Vercel) set VITE_API_ENDPOINT to the deployed @sparkle/referral-sdk-node
+// (Vercel) set VITE_API_ENDPOINT to the deployed @blynk-deferlink/referral-sdk-node
 // instance instead — see .env.production.
 const config = {
   apiEndpoint: import.meta.env.VITE_API_ENDPOINT ?? 'http://localhost:8787/api',
-  appScheme: 'sparkleapp',
+  appScheme: 'myapp',
   // androidPackage/iosAppId are only used as a fallback when the *StoreUrl
   // envs below aren't set — real values here, not placeholders, matter
   // only if you're relying on that fallback. Prefer setting the full URLs.
-  androidPackage: 'ng.sparkle.Sparkle_android.prod',
-  iosAppId: '1475491602',
+  androidPackage: 'com.example.yourapp',
+  iosAppId: '0000000000',
   // Full store links, set directly rather than composed — see
   // .env.production. iosStoreUrl in particular should always be the full
   // regioned URL (apps.apple.com/<country>/app/<slug>/id<id>), not just an

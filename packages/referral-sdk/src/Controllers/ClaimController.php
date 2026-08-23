@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Sparkle\Referral\Controllers;
+namespace BlynkDeferlink\Referral\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Sparkle\Referral\Services\ConversionTracker;
+use BlynkDeferlink\Referral\Services\ConversionTracker;
 
 /**
  * POST /referral/claim — called by the mobile app after a successful match

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Sparkle\Referral\Support;
+namespace BlynkDeferlink\Referral\Support;
 
 /**
  * Referral codes belong to the host application, not this SDK, so validation

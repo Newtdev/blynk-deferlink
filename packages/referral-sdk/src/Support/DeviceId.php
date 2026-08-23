@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Sparkle\Referral\Support;
+namespace BlynkDeferlink\Referral\Support;
 
 /**
  * Applies `hash_device_ids` consistently everywhere a device_id is

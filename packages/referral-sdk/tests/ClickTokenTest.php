@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Sparkle\Referral\Tests;
+namespace BlynkDeferlink\Referral\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Sparkle\Referral\Support\ClickToken;
+use BlynkDeferlink\Referral\Support\ClickToken;
 
 final class ClickTokenTest extends TestCase
 {

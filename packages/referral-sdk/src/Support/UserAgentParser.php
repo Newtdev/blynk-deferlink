@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Sparkle\Referral\Support;
+namespace BlynkDeferlink\Referral\Support;
 
 /**
  * Best-effort user-agent / device-model normalizer.

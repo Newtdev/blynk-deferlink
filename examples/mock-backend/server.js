@@ -1,5 +1,5 @@
 /**
- * Mock referral backend — a zero-dependency stand-in for `sparkle/referral-sdk`
+ * Mock referral backend — a zero-dependency stand-in for `blynk-deferlink/referral-sdk`
  * (the PHP package) so the web + mobile examples can run end-to-end with just
  * Node. It keeps clicks in memory and mirrors the same fingerprint scoring, so
  * a click → match → claim flow behaves like the real thing. NOT for production.
