@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace BlynkDeferlink\Referral\Controllers;
+namespace Sparkle\Referral\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use BlynkDeferlink\Referral\Services\ClickStore;
-use BlynkDeferlink\Referral\Services\ConversionTracker;
-use BlynkDeferlink\Referral\Services\FingerprintMatcher;
-use BlynkDeferlink\Referral\Support\ClickToken;
-use BlynkDeferlink\Referral\Support\ReferralConfig;
+use Sparkle\Referral\Services\ClickStore;
+use Sparkle\Referral\Services\ConversionTracker;
+use Sparkle\Referral\Services\FingerprintMatcher;
+use Sparkle\Referral\Support\ClickToken;
+use Sparkle\Referral\Support\ReferralConfig;
 
 /**
  * POST /referral/match — called by the mobile app on first launch (iOS

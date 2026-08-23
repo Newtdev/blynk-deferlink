@@ -1,4 +1,4 @@
-# blynk-deferlink
+# Sparkle referral system
 
 A deferred deep linking referral system in three installable packages plus
 runnable examples. **New here?** Read this file top to bottom — it's written
@@ -8,13 +8,13 @@ run it, and where to go next depending on what you're trying to do.
 ```
 packages/
   referral-sdk/       PHP / Composer  — backend: click store, matching, claims
-  referral-sdk-node/  @blynk-deferlink/referral-sdk-node — Node.js backend (Express + Postgres), same API contract
-  referral-web/       @blynk-deferlink/referral-web     — React landing page + hooks
-  referral-mobile/    @blynk-deferlink/referral-mobile  — React Native code recovery
+  referral-sdk-node/  @sparkle/referral-sdk-node — Node.js backend (Express + Postgres), same API contract
+  referral-web/       @sparkle/referral-web     — React landing page + hooks
+  referral-mobile/    @sparkle/referral-mobile  — React Native code recovery
 examples/
   mock-backend/       zero-dependency Node stand-in for either real backend (in-memory, not for production)
-  web/                Vite React app using @blynk-deferlink/referral-web
-  mobile/             Expo app using @blynk-deferlink/referral-mobile
+  web/                Vite React app using @sparkle/referral-web
+  mobile/             Expo app using @sparkle/referral-mobile
 ```
 
 ## How it works
@@ -111,7 +111,7 @@ config field or endpoint shape.
 
 ## Installing the SDKs
 
-These packages are **not published to npm yet**, so `npm install @blynk-deferlink/...`
+These packages are **not published to npm yet**, so `npm install @sparkle/...`
 won't resolve. Until you publish, install them locally — three ways:
 
 **1. Workspaces (what this repo uses).** From the repo root:
@@ -128,7 +128,7 @@ to the local source automatically.
 ```jsonc
 // package.json
 "dependencies": {
-  "@blynk-deferlink/referral-mobile": "file:/path/to/packages/referral-mobile"
+  "@sparkle/referral-mobile": "file:/path/to/packages/referral-mobile"
 }
 ```
 
@@ -140,9 +140,9 @@ non-source consumer, build it first (below).
 **3. A tarball.** Build, pack, then install the `.tgz` anywhere:
 
 ```bash
-npm --workspace @blynk-deferlink/referral-web run build
-npm --workspace @blynk-deferlink/referral-web pack        # → blynk-deferlink-referral-web-1.0.0.tgz
-npm install ./blynk-deferlink-referral-web-1.0.0.tgz
+npm --workspace @sparkle/referral-web run build
+npm --workspace @sparkle/referral-web pack        # → sparkle-referral-web-1.0.0.tgz
+npm install ./sparkle-referral-web-1.0.0.tgz
 ```
 
 To publish for real: `npm run build:sdks`, then `npm publish` in each package

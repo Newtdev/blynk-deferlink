@@ -9,7 +9,7 @@
     "ios": "expo run:ios"
   },
   "dependencies": {
-    "@blynk-deferlink/referral-mobile": "file:../../packages/referral-mobile",
+    "@sparkle/referral-mobile": "file:../../packages/referral-mobile",
     "expo": "~51.0.0",
     "expo-dev-client": "~4.0.0",
     "react": "18.2.0",

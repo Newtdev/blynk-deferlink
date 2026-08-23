@@ -5,6 +5,7 @@ export { useReferralCode } from './useReferralCode';
 export { ReferralService } from './ReferralService';
 
 export { collectFingerprint } from './fingerprint';
+export { DEFAULT_API_ENDPOINT } from './api';
 export { readInstallReferrer } from './platform/android';
 
 export { ReferralPasteButton } from './ReferralPasteButton';

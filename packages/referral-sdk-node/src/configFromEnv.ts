@@ -4,7 +4,7 @@ import type { ReferralConfigInput } from './config.js';
  * Builds a ReferralConfig from environment variables, for the two shipped
  * entrypoints (src/server.ts, api/index.ts) that run this package as a
  * standalone deployed service rather than an embedded library. Projects
- * that `npm install @blynk-deferlink/referral-sdk-node` into their own app and call
+ * that `npm install @sparkle/referral-sdk-node` into their own app and call
  * `createApp(config)` directly can ignore this and pass a config object
  * (including `code_validator` / `rewards.on_claim_callback` functions,
  * which can't be expressed as env vars) in code instead.

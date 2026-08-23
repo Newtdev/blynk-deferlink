@@ -22,11 +22,11 @@ export interface FingerprintData {
 }
 
 export interface ReferralConfig {
-  /** Base URL of your referral backend, e.g. "https://your-backend.example.com/api". */
+  /** Base URL of the PHP backend, e.g. "https://referal.sparkle.ng/api". */
   apiEndpoint: string;
-  /** Custom URL scheme WITHOUT the "://", e.g. "myapp". */
+  /** Custom URL scheme WITHOUT the "://", e.g. "sparkleapp". */
   appScheme: string;
-  /** Android application id, e.g. "com.example.app". Ignored if androidStoreUrl is set. */
+  /** Android application id, e.g. "com.sparkle.app". Ignored if androidStoreUrl is set. */
   androidPackage: string;
   /**
    * Numeric App Store id, e.g. "123456789". Ignored if iosStoreUrl is set.

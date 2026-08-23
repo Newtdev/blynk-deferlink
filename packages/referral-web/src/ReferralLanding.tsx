@@ -31,7 +31,7 @@ export interface ReferralLandingProps {
   onRedirect?: (platform: string) => void;
 }
 
-const STYLE_ID = 'deferlink-referral-styles';
+const STYLE_ID = 'sparkle-referral-styles';
 
 function useInjectedStyles(theme?: ReferralTheme) {
   useEffect(() => {

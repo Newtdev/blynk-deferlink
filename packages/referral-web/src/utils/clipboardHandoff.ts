@@ -10,11 +10,11 @@
  * can't be mistaken for a match on the reading side.
  */
 
-const CLIPBOARD_PREFIX = 'deferlink_ref:v1:';
+const CLIPBOARD_PREFIX = 'sparkle_ref:v1:';
 
 /**
- * Writes `deferlink_ref:v1:<code>:<issued_unix_ts>` (or
- * `deferlink_ref:v1:<code>:<issued_unix_ts>:<token>` when the click has
+ * Writes `sparkle_ref:v1:<code>:<issued_unix_ts>` (or
+ * `sparkle_ref:v1:<code>:<issued_unix_ts>:<token>` when the click has
  * registered in time) to the clipboard. The timestamp lets the app reject a
  * stale payload without a network round trip — see the mobile SDK's
  * staleness check. `token`, when present, is the signed proof the click is

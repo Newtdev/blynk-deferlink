@@ -1,4 +1,4 @@
-# Integrating `@blynk-deferlink/referral-web` (landing page)
+# Integrating `@sparkle/referral-web` (landing page)
 
 Step-by-step setup for the React landing page a share link points to. It
 registers the click, attempts to open an already-installed app, and
@@ -20,18 +20,18 @@ reference, see
 ## 1. Install
 
 ```bash
-npm install @blynk-deferlink/referral-web
+npm install @sparkle/referral-web
 ```
 
 ## 2. Configure the provider
 
 ```tsx
-import { ReferralProvider, ReferralLanding } from '@blynk-deferlink/referral-web';
+import { ReferralProvider, ReferralLanding } from '@sparkle/referral-web';
 
 const config = {
   apiEndpoint: 'https://your-backend.example.com/api', // from the backend guide
-  appScheme: 'myapp',            // your app's custom URL scheme, no "://"
-  androidPackage: 'com.example.app',
+  appScheme: 'sparkleapp',            // your app's custom URL scheme, no "://"
+  androidPackage: 'com.sparkle.app',
   iosAppId: '123456789',
 };
 

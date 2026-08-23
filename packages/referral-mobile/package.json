@@ -1,5 +1,5 @@
 {
-  "name": "@blynk-deferlink/referral-mobile",
+  "name": "@sparkle/referral-mobile",
   "version": "1.0.0",
   "description": "Deferred deep linking referral SDK for React Native — Install Referrer (Android) + fingerprint match (iOS) code recovery.",
   "license": "MIT",

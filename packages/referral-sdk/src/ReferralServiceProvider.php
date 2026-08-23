@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-namespace BlynkDeferlink\Referral;
+namespace Sparkle\Referral;
 
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
-use BlynkDeferlink\Referral\Commands\CleanupExpiredClicks;
-use BlynkDeferlink\Referral\Middleware\ReferralRateLimit;
-use BlynkDeferlink\Referral\Services\ClickStore;
-use BlynkDeferlink\Referral\Services\ConversionTracker;
-use BlynkDeferlink\Referral\Services\FingerprintMatcher;
-use BlynkDeferlink\Referral\Support\CodeValidator;
-use BlynkDeferlink\Referral\Support\ReferralConfig;
+use Sparkle\Referral\Commands\CleanupExpiredClicks;
+use Sparkle\Referral\Middleware\ReferralRateLimit;
+use Sparkle\Referral\Services\ClickStore;
+use Sparkle\Referral\Services\ConversionTracker;
+use Sparkle\Referral\Services\FingerprintMatcher;
+use Sparkle\Referral\Support\CodeValidator;
+use Sparkle\Referral\Support\ReferralConfig;
 
 class ReferralServiceProvider extends ServiceProvider
 {

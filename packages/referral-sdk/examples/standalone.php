@@ -15,12 +15,12 @@ declare(strict_types=1);
 
 require __DIR__ . '/../vendor/autoload.php';
 
-use BlynkDeferlink\Referral\Services\ClickStore;
-use BlynkDeferlink\Referral\Services\ConversionTracker;
-use BlynkDeferlink\Referral\Services\FingerprintMatcher;
-use BlynkDeferlink\Referral\Support\ClickToken;
-use BlynkDeferlink\Referral\Support\CodeValidator;
-use BlynkDeferlink\Referral\Support\ReferralConfig;
+use Sparkle\Referral\Services\ClickStore;
+use Sparkle\Referral\Services\ConversionTracker;
+use Sparkle\Referral\Services\FingerprintMatcher;
+use Sparkle\Referral\Support\ClickToken;
+use Sparkle\Referral\Support\CodeValidator;
+use Sparkle\Referral\Support\ReferralConfig;
 
 $pdo = new PDO('mysql:host=127.0.0.1;dbname=app;charset=utf8mb4', 'user', 'pass', [
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,

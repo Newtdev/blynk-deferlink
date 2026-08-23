@@ -11,7 +11,7 @@ const sdkSrc = fileURLToPath(
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { '@blynk-deferlink/referral-web': sdkSrc },
+    alias: { '@sparkle/referral-web': sdkSrc },
     dedupe: ['react', 'react-dom'],
   },
   server: {

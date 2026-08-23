@@ -47,7 +47,7 @@ export async function readInstallReferrer(): Promise<{ code: string; token: stri
         '`cd android && ./gradlew clean` (or rebuild) — it is a required peer ' +
         'dependency, not optional, because it is the deterministic recovery ' +
         'path Android relies on to keep match confidence reliable. See the ' +
-        '@blynk-deferlink/referral-mobile README.',
+        '@sparkle/referral-mobile README.',
     );
   }
 

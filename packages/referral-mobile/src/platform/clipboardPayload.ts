@@ -1,4 +1,4 @@
-const PREFIX = 'deferlink_ref:v1:';
+const PREFIX = 'sparkle_ref:v1:';
 
 export interface ParsedClipboardReferral {
   code: string;
@@ -16,7 +16,7 @@ export interface ParsedClipboardReferral {
 /**
  * Parses and validates a clipboard payload written by
  * `writeClipboardReferral()` on the web landing page (see
- * @blynk-deferlink/referral-web). Returns null for anything that doesn't match the
+ * @sparkle/referral-web). Returns null for anything that doesn't match the
  * expected shape, is malformed, or has aged past `maxAgeSeconds` — a stray
  * clipboard value (a password, an unrelated copied link) is never mistaken
  * for a match. This is what makes the deterministic tier self-validating

@@ -1,7 +1,7 @@
 {
-  "name": "@blynk-deferlink/referral-sdk-node",
+  "name": "@sparkle/referral-sdk-node",
   "version": "1.0.0",
-  "description": "Deferred deep linking referral SDK — Node.js backend (Express + Drizzle + Postgres). A drop-in alternative to blynk-deferlink/referral-sdk (PHP) for JS-only stacks. One codebase runs both as a long-running server (Render, Fly, bare Node) and as Vercel serverless functions.",
+  "description": "Deferred deep linking referral SDK — Node.js backend (Express + Drizzle + Postgres). A drop-in alternative to sparkle/referral-sdk (PHP) for JS-only stacks. One codebase runs both as a long-running server (Render, Fly, bare Node) and as Vercel serverless functions.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",

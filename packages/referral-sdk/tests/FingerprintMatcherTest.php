@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace BlynkDeferlink\Referral\Tests;
+namespace Sparkle\Referral\Tests;
 
 use PHPUnit\Framework\TestCase;
-use BlynkDeferlink\Referral\Services\FingerprintMatcher;
-use BlynkDeferlink\Referral\Support\ReferralConfig;
+use Sparkle\Referral\Services\FingerprintMatcher;
+use Sparkle\Referral\Support\ReferralConfig;
 
 /**
  * Exercises the pure score() function — no database required. A dummy PDO is

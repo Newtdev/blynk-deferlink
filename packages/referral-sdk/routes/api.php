@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Route;
-use BlynkDeferlink\Referral\Controllers\ClaimController;
-use BlynkDeferlink\Referral\Controllers\ClickController;
-use BlynkDeferlink\Referral\Controllers\MatchController;
+use Sparkle\Referral\Controllers\ClaimController;
+use Sparkle\Referral\Controllers\ClickController;
+use Sparkle\Referral\Controllers\MatchController;
 
 /*
 | Referral SDK routes. Registered automatically by ReferralServiceProvider

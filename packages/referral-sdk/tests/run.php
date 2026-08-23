@@ -12,8 +12,8 @@ require __DIR__ . '/../src/Support/UserAgentParser.php';
 require __DIR__ . '/../src/Support/ReferralConfig.php';
 require __DIR__ . '/../src/Services/FingerprintMatcher.php';
 
-use BlynkDeferlink\Referral\Services\FingerprintMatcher;
-use BlynkDeferlink\Referral\Support\ReferralConfig;
+use Sparkle\Referral\Services\FingerprintMatcher;
+use Sparkle\Referral\Support\ReferralConfig;
 
 $matcher = new FingerprintMatcher(null, new ReferralConfig());
 

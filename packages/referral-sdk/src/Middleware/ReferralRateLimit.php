@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace BlynkDeferlink\Referral\Middleware;
+namespace Sparkle\Referral\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
-use BlynkDeferlink\Referral\Support\ReferralConfig;
+use Sparkle\Referral\Support\ReferralConfig;
 use Symfony\Component\HttpFoundation\Response;
 
 /**

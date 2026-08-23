@@ -4,9 +4,9 @@
     "slug": "referral-example",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "myapp",
+    "scheme": "sparkleapp",
     "platforms": ["ios", "android"],
-    "android": { "package": "com.example.app" },
-    "ios": { "bundleIdentifier": "com.example.app" }
+    "android": { "package": "com.sparkle.example" },
+    "ios": { "bundleIdentifier": "com.sparkle.example" }
   }
 }

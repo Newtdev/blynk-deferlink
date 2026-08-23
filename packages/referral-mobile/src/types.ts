@@ -3,11 +3,11 @@ export type MobilePlatform = 'ios' | 'android';
 
 export interface ReferralConfig {
   /**
-   * Base URL of your referral backend (e.g. "https://your-app.example.com/api").
-   * Required — there's no default. See docs/integration/referral-sdk.md or
-   * referral-sdk-node.md to set one up.
+   * Base URL of the referral backend. Defaults to the production endpoint
+   * (https://referral-sdk-node.vercel.app/api) — only set this to point at a
+   * staging/local backend instead.
    */
-  apiEndpoint: string;
+  apiEndpoint?: string;
   /** Custom URL scheme without "://", used for deep-link handling. */
   appScheme?: string;
   /**

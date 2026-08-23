@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace BlynkDeferlink\Referral\Support;
+namespace Sparkle\Referral\Support;
 
 /**
  * Signs a proof that a specific `click_id` is real and hasn't expired, so

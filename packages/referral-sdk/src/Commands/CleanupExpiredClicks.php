@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace BlynkDeferlink\Referral\Commands;
+namespace Sparkle\Referral\Commands;
 
 use Illuminate\Console\Command;
-use BlynkDeferlink\Referral\Services\ClickStore;
+use Sparkle\Referral\Services\ClickStore;
 
 /**
  * Deletes unmatched clicks past their 48h (configurable) expiry, taking their

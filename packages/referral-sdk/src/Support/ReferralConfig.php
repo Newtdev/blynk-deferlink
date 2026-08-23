@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace BlynkDeferlink\Referral\Support;
+namespace Sparkle\Referral\Support;
 
 /**
  * Immutable configuration holder. Hydrated from a plain array so the same

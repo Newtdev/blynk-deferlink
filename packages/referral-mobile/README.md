@@ -1,13 +1,13 @@
-# @blynk-deferlink/referral-mobile
+# @sparkle/referral-mobile
 
 React Native half of the deferred deep linking referral system. On first launch
 it recovers the referral code the user came in with — deterministically on
 Android via the Play Install Referrer, and via fingerprint matching on iOS — then
 hands it to your signup flow and records the conversion.
 
-Pairs with `blynk-deferlink/referral-sdk` (PHP) or `@blynk-deferlink/referral-sdk-node`
+Pairs with `sparkle/referral-sdk` (PHP) or `@sparkle/referral-sdk-node`
 (Node/Express) — either backend, same API contract — and
-`@blynk-deferlink/referral-web` (landing page).
+`@sparkle/referral-web` (landing page).
 
 **New to this package?** [`docs/integration/referral-mobile.md`](../../docs/integration/referral-mobile.md)
 is a step-by-step setup guide; this README is API/config reference.
@@ -16,7 +16,7 @@ is a step-by-step setup guide; this README is API/config reference.
 > only ever runs after your app is already installed, so it never needs to
 > know where to send someone to download it. Set `androidPackage`/`iosAppId`
 > (or `androidStoreUrl`/`iosStoreUrl` to use a full URL as-is) in
-> `@blynk-deferlink/referral-web`'s config instead — that's the landing page redirecting
+> `@sparkle/referral-web`'s config instead — that's the landing page redirecting
 > not-yet-installed visitors to the right store.
 
 ## Install
@@ -33,9 +33,9 @@ npm install react-native-play-install-referrer
 cd ios && pod install
 ```
 
-npm reads the package's real name (`@blynk-deferlink/referral-mobile`) out of its
+npm reads the package's real name (`@sparkle/referral-mobile`) out of its
 `package.json`, so it lands in your `dependencies` as
-`"@blynk-deferlink/referral-mobile": "github:Newtdev/blynk-deferlink#mobile-release"`
+`"@sparkle/referral-mobile": "github:Newtdev/blynk-deferlink#mobile-release"`
 and imports work exactly like a normal published package — no source changes
 needed later.
 
@@ -45,7 +45,7 @@ TypeScript source via the `react-native` field in `package.json`, no build
 step required. Once this is published to npm, switch the first line to:
 
 ```bash
-npm install @blynk-deferlink/referral-mobile react-native-device-info
+npm install @sparkle/referral-mobile react-native-device-info
 ```
 
 `react-native-device-info` is a required peer — it's the only source of the
@@ -78,13 +78,12 @@ means and the one thing it changes about where you mount `useReferralCode()`.
 Wrap your app once:
 
 ```tsx
-import { ReferralProvider } from '@blynk-deferlink/referral-mobile';
+import { ReferralProvider } from '@sparkle/referral-mobile';
 
 const referralConfig = {
-  // Required — no default. Point this at your own deployed backend; see
-  // docs/integration/referral-sdk.md or referral-sdk-node.md to set one up.
-  apiEndpoint: 'https://your-backend.example.com/api',
-  appScheme: 'myapp',
+  // apiEndpoint defaults to the production backend — omit it entirely unless
+  // you're pointing at a staging/local server instead.
+  appScheme: 'sparkleapp',
   matchTimeoutMs: 5000,
   onCodeFound: (code, method) => console.log('recovered', code, 'via', method),
 };
@@ -101,7 +100,7 @@ export default function App() {
 Then use the hook on your signup / onboarding screen:
 
 ```tsx
-import { useReferralCode } from '@blynk-deferlink/referral-mobile';
+import { useReferralCode } from '@sparkle/referral-mobile';
 
 function SignupScreen() {
   const { code, loading, method, claim } = useReferralCode();
@@ -129,7 +128,7 @@ Android has a deterministic path (Install Referrer, below). iOS has no OS
 equivalent, so fingerprint matching is the only *automatic* recovery it
 gets — reliable, but probabilistic. `ReferralPasteButton` adds a genuine
 deterministic tier for iOS, using the system clipboard as a same-device
-handoff from the web landing page (`@blynk-deferlink/referral-web`'s
+handoff from the web landing page (`@sparkle/referral-web`'s
 `writeClipboardReferral`) to the app's first launch.
 
 **This is required, not decorative, if you want iOS to have a
@@ -144,7 +143,7 @@ signup screen, a dedicated first-launch moment) — just make sure it's
 somewhere:
 
 ```tsx
-import { useReferralCode, ReferralPasteButton } from '@blynk-deferlink/referral-mobile';
+import { useReferralCode, ReferralPasteButton } from '@sparkle/referral-mobile';
 
 function SignupScreen() {
   const { code, method, claim, onClipboardCode } = useReferralCode();
@@ -340,7 +339,7 @@ recovered one.
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `apiEndpoint` | **yes** | Base URL of your referral backend. No default — see [`docs/integration/referral-sdk.md`](../../docs/integration/referral-sdk.md) or [`referral-sdk-node.md`](../../docs/integration/referral-sdk-node.md) to set one up. |
+| `apiEndpoint` | no | Base URL of the referral backend. Defaults to the production endpoint (`https://referral-sdk-node.vercel.app/api`); override only for staging/local. |
 | `appScheme` | no | Custom scheme for deep-link handling. |
 | `matchTimeoutMs` | no | Max wait for the match request (default 5000). |
 | `matchWindow` / `minConfidence` | no | Informational; the server enforces both. |

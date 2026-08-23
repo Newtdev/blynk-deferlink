@@ -1,4 +1,4 @@
-# blynk-deferlink/referral-sdk
+# sparkle/referral-sdk
 
 Backend for a **deferred deep linking** referral system. It stores landing-page
 clicks, recovers the referral code after install (Android Install Referrer or
@@ -9,10 +9,10 @@ iOS fingerprint matching), records conversions, and distributes rewards.
   config + migrations, routes, throttling middleware, and a cleanup command.
 
 This is one of two interchangeable backends — the other is
-[`@blynk-deferlink/referral-sdk-node`](../referral-sdk-node) (Node/Express + Postgres,
+[`@sparkle/referral-sdk-node`](../referral-sdk-node) (Node/Express + Postgres,
 same API contract, same matching algorithm) for projects that would rather
-not run PHP. Either pairs with `@blynk-deferlink/referral-web` (landing page) and
-`@blynk-deferlink/referral-mobile` (React Native recovery), which don't care which
+not run PHP. Either pairs with `@sparkle/referral-web` (landing page) and
+`@sparkle/referral-mobile` (React Native recovery), which don't care which
 one is behind `apiEndpoint`.
 
 **New to this package?** [`docs/integration/referral-sdk.md`](../../docs/integration/referral-sdk.md)
@@ -23,7 +23,7 @@ is a step-by-step setup guide; this README is API/config reference.
 ## Install
 
 ```bash
-composer require blynk-deferlink/referral-sdk
+composer require sparkle/referral-sdk
 ```
 
 ### Laravel

@@ -1,4 +1,4 @@
-/** Public entrypoint for `@blynk-deferlink/referral-sdk-node`. */
+/** Public entrypoint for `@sparkle/referral-sdk-node`. */
 export { createApp } from './app.js';
 export { configFromEnv } from './configFromEnv.js';
 export { ReferralConfig, type ReferralConfigInput, type RewardsConfig, type ScoringWeights } from './config.js';

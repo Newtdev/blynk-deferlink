@@ -1,13 +1,13 @@
-# @blynk-deferlink/referral-web
+# @sparkle/referral-web
 
 React web half of the deferred deep linking referral system. It renders the
 referral landing page, captures a browser fingerprint, detects the platform,
 tries to open an already-installed app, and redirects to the right store — with
 the referral code embedded for Android's Install Referrer.
 
-Pairs with `blynk-deferlink/referral-sdk` (PHP) or `@blynk-deferlink/referral-sdk-node`
+Pairs with `sparkle/referral-sdk` (PHP) or `@sparkle/referral-sdk-node`
 (Node/Express) — either backend, same API contract — and
-`@blynk-deferlink/referral-mobile` (React Native).
+`@sparkle/referral-mobile` (React Native).
 
 **New to this package?** [`docs/integration/referral-web.md`](../../docs/integration/referral-web.md)
 is a step-by-step setup guide; this README is prop/config reference.
@@ -15,7 +15,7 @@ is a step-by-step setup guide; this README is prop/config reference.
 ## Install
 
 ```bash
-npm install @blynk-deferlink/referral-web
+npm install @sparkle/referral-web
 ```
 
 ## Quick start
@@ -24,12 +24,12 @@ Wrap the app (or just the referral route) in the provider, then drop in the
 pre-built landing page:
 
 ```tsx
-import { ReferralProvider, ReferralLanding } from '@blynk-deferlink/referral-web';
+import { ReferralProvider, ReferralLanding } from '@sparkle/referral-web';
 
 const config = {
-  apiEndpoint: 'https://your-backend.example.com/api',
-  appScheme: 'myapp',
-  androidPackage: 'com.example.app',
+  apiEndpoint: 'https://referal.sparkle.ng/api',
+  appScheme: 'sparkleapp',
+  androidPackage: 'com.sparkle.app',
   iosAppId: '123456789',
   appOpenTimeout: 2000,
 };
@@ -93,7 +93,7 @@ import {
   useReferralConfig,
   getStoreUrl,
   getAppSchemeUrl,
-} from '@blynk-deferlink/referral-web';
+} from '@sparkle/referral-web';
 
 function MyLanding({ code }: { code: string }) {
   const config = useReferralConfig();
@@ -125,15 +125,15 @@ client SPA can't produce working previews. Render them server-side. With
 Next.js:
 
 ```tsx
-import { buildReferralMeta } from '@blynk-deferlink/referral-web';
+import { buildReferralMeta } from '@sparkle/referral-web';
 
 export function generateMetadata({ params }) {
   const meta = buildReferralMeta({
     referrerName: lookupName(params.code),
     rewardText: 'Get ₦500 when you sign up',
-    imageUrl: 'https://your-backend.example.com/og-image.png',
-    url: `https://your-backend.example.com/code=${params.code}`,
-    appName: 'Your App',
+    imageUrl: 'https://referal.sparkle.ng/og-image.png',
+    url: `https://referal.sparkle.ng/code=${params.code}`,
+    appName: 'Sparkle',
   });
   return {
     title: meta.title,
@@ -156,7 +156,7 @@ most in-app browsers.
 | Field | Required | Description |
 |-------|----------|-------------|
 | `apiEndpoint` | yes | Base URL of the referral backend — PHP or Node, same API contract (e.g. `.../api`). |
-| `appScheme` | yes | Custom scheme without `://` (e.g. `myapp`). |
+| `appScheme` | yes | Custom scheme without `://` (e.g. `sparkleapp`). |
 | `androidPackage` | yes* | Android application id — used to compose the Play Store URL. |
 | `iosAppId` | yes* | Numeric App Store id — used to compose the App Store URL. |
 | `androidStoreUrl` | no | Full Play Store URL to use as-is instead of composing one from `androidPackage`. The `referrer` param is still merged in automatically — it's what carries the referral code through install, not just cosmetic. |

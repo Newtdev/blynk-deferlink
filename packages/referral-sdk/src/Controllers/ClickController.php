@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace BlynkDeferlink\Referral\Controllers;
+namespace Sparkle\Referral\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use BlynkDeferlink\Referral\Services\ClickStore;
-use BlynkDeferlink\Referral\Support\ClickToken;
-use BlynkDeferlink\Referral\Support\CodeValidator;
-use BlynkDeferlink\Referral\Support\ReferralConfig;
+use Sparkle\Referral\Services\ClickStore;
+use Sparkle\Referral\Support\ClickToken;
+use Sparkle\Referral\Support\CodeValidator;
+use Sparkle\Referral\Support\ReferralConfig;
 
 /**
  * POST /referral/click — called by the landing page when a user arrives.

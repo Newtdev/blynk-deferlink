@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace BlynkDeferlink\Referral\Services;
+namespace Sparkle\Referral\Services;
 
 use PDO;
-use BlynkDeferlink\Referral\Support\ReferralConfig;
+use Sparkle\Referral\Support\ReferralConfig;
 
 /**
  * All click-table reads/writes. Framework-agnostic (PDO only).

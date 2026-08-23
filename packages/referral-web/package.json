@@ -1,5 +1,5 @@
 {
-  "name": "@blynk-deferlink/referral-web",
+  "name": "@sparkle/referral-web",
   "version": "1.0.0",
   "description": "Deferred deep linking referral SDK for React web — landing page, fingerprint capture, platform detection, and store redirect.",
   "license": "MIT",
