@@ -239,6 +239,10 @@ const routes = {
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
   const url = req.url.split('?')[0];
+  // Matches the real backends' GET /api/health — the natural first thing to
+  // curl when checking "is this actually running," so the mock stand-in
+  // should answer it the same way instead of a confusing 404.
+  if (req.method === 'GET' && url === '/api/health') return send(res, 200, { ok: true });
   const handler = routes[url];
   if (req.method !== 'POST' || !handler) return send(res, 404, { error: 'not_found' });
   const body = await readBody(req);
