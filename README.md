@@ -37,9 +37,14 @@ it's worth seeing drawn out rather than just described:
 
 ## Quick start — run the demo
 
-The fastest way to see the whole thing work, before installing anything for
-real. Three terminals. No PHP or database required — the mock backend
-covers it.
+**Don't want to clone anything yet?** [Try the recovery flow live](https://referral-web-demo.vercel.app/demo)
+— registers a real click against the live backend, then walks through all
+three recovery methods (Android install-referrer, iOS clipboard,
+fingerprint-only fallback) with the actual request/response for each.
+
+Otherwise, the fastest way to see the whole thing work locally, before
+installing anything for real. Three terminals. No PHP or database required
+— the mock backend covers it.
 
 ```bash
 # 1) backend  (http://localhost:8787)
