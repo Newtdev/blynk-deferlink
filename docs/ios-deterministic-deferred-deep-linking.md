@@ -60,8 +60,13 @@ it's on-device, first-party, momentary. It doesn't require the ATT prompt.
   AppsFlyer) is *more* likely to trigger an ATT requirement than avoid one,
   since their fingerprinting accuracy depends on aggregating device data
   across every client app using their SDK — a form of third-party sharing
-  our current first-party-only setup doesn't have. See the ATT discussion
-  earlier in this project's history for the full reasoning.
+  our current first-party-only setup doesn't have. See
+  [`docs/decisions.md`](decisions.md) #5 for the full reasoning, and #25
+  for how that conclusion extends (and what it requires) once a hosted,
+  multi-tenant deployment serves more than one company's app from the
+  same backend — this deterministic clipboard tier is unaffected either
+  way, since it never does cross-click matching at all; #25's concern is
+  specific to the fingerprint fallback tier below.
 - **Symmetric with Android.** Same two-tier shape: deterministic primary,
   fingerprint fallback. Easier to reason about and document as one
   consistent story across platforms.

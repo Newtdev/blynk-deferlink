@@ -1193,3 +1193,59 @@ file in the repo (only broken links found were inside vendored CocoaPods
 READMEs, not ours); `npm install` to regenerate `package-lock.json`
 against the renamed packages, confirmed zero remaining `@sparkle`
 references anywhere in it afterward.
+
+---
+
+## 25. #5's ATT analysis extended to a hosted, multi-tenant deployment — Decided (design), not yet enforced in code
+
+**Question.** #5 concluded fingerprint matching doesn't require Apple's
+ATT permission prompt because it's first-party — one company's own web
+click linked to that same company's own app install, data never leaving
+that company's infrastructure. Does that conclusion survive a *hosted*
+version of this project, where Blynk runs one backend deployment serving
+many different customers' apps at once?
+
+**Short answer: only if matching stays strictly scoped per tenant.**
+Sharing a physical server or database instance across customers is not,
+by itself, the problem — Apple's definition of tracking is about whether
+*data gets linked* across companies, not about whose infrastructure it
+runs on. A hosting provider doesn't make its tenants' apps non-first-party
+just because they share a data center. The problem would be the matching
+query: `FingerprintMatcher.match()` (`packages/referral-sdk-node/src/services/fingerprintMatcher.ts`,
+the `referralClicks` query around the `matched`/`createdAt` window filter)
+currently scores an incoming fingerprint against **every** unmatched
+click in the table, full stop — correct today, because today's table only
+ever holds one company's clicks. The instant a hosted deployment holds
+multiple customers' clicks in that same table with no tenant filter, a
+match could legitimately pair Customer A's web click with Customer B's
+app install. At that point Blynk's hosted backend is doing exactly what
+#5 flagged MMPs (Branch, AppsFlyer) for: aggregating device fingerprints
+across many different companies' apps to make matches work. That's the
+textbook shape of "tracking" under Apple's own definition, not an edge
+case — and #5 already establishes that this is the *riskier* posture,
+not a neutral one.
+
+**What this requires, concretely, before the hosted product ships**
+(cross-referencing the multi-tenancy gap already identified separately —
+no table in this schema has a tenant/app_id column yet): every match
+query must filter to the requesting app's own clicks only, never scored
+against another tenant's rows, with no fallback path that silently widens
+the search across tenants if a narrow match fails. This is a hard
+correctness requirement for the ATT conclusion to hold, not a
+nice-to-have — it needs to land in the same change that adds
+multi-tenancy at all, not as a follow-up.
+
+**Also unaffected, and worth stating plainly:** the deterministic paths
+(Android Install Referrer, iOS clipboard — see
+[`docs/ios-deterministic-deferred-deep-linking.md`](ios-deterministic-deferred-deep-linking.md))
+never touch this question at all. Neither one does any cross-click
+matching — a signed token is read straight off a channel scoped to that
+one install, so there's nothing to accidentally link across tenants even
+before per-tenant scoping exists. The multi-tenant risk above is specific
+to the probabilistic fallback tier.
+
+**Not legal advice.** This is the same category of analysis #5 did —
+checked against Apple's own published definition, not guesswork — but
+Apple's review outcomes aren't fully mechanical and the guidelines can
+shift. Worth a real compliance/legal review before the hosted product
+takes its first paying multi-tenant customer, not just this document.
