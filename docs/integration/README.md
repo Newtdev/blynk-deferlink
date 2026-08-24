@@ -27,14 +27,17 @@ Pick one backend, then set up web and/or mobile against it, in this order:
 ## The flow these four pieces implement together
 
 ```
-share link  →  landing page stores a click (fingerprint)  →  user installs app
-   →  app recovers the code (Android: Install Referrer · iOS: fingerprint/clipboard)
-   →  code pre-fills signup  →  claim records the conversion + reward
+share link tapped → landing page stores a click, signs a token
+   → app recovers the code + token: deterministically (Android: Install
+     Referrer · iOS: clipboard, if tapped) or, as a fallback, by scored
+     fingerprint match
+   → code pre-fills signup → claim verifies the token, records the
+     conversion + reward
 ```
 
-For the full picture — all four recovery paths (deterministic and
-probabilistic, on both platforms) and exactly how they converge on one
-backend and one claim — see [`recovery-flow.md`](recovery-flow.md).
+For the full picture — both recovery paths, diagrammed, and exactly how
+they converge on one backend and one claim — see
+[the root README's "How it works"](../../README.md#how-it-works).
 
 Each guide's own verification step confirms that piece works in
 isolation (a real `curl` round trip for the backends, a real click/recover/
