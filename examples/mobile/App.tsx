@@ -16,12 +16,15 @@ import {
   type ReferralConfig,
 } from '@blynk-deferlink/referral-mobile';
 
-// Defaults to the mock backend (`npm run backend`, see the root README's
-// "Quick start"). Point this at a real deployed backend instead once you
-// have one — see docs/integration/referral-sdk.md or referral-sdk-node.md.
-// On a physical device, `localhost` won't reach your machine — use your
-// computer's LAN IP instead.
-const API = 'http://localhost:8787/api';
+// Local dev talks to the mock backend (`npm run backend`, see the root
+// README's "Quick start"); on a physical device `localhost` won't reach
+// your machine, so use your computer's LAN IP there instead. A release
+// build (`__DEV__` false — this is what ships to Play Console's Internal
+// Testing track) points at the real deployed backend instead, so a
+// tester installing this from the Play Store sees a genuine recovery,
+// not a dead endpoint. See docs/integration/referral-sdk.md or
+// referral-sdk-node.md for pointing this at your own backend instead.
+const API = __DEV__ ? 'http://localhost:8787/api' : 'https://referral-sdk-node.vercel.app/api';
 
 const config: ReferralConfig = {
   apiEndpoint: API,
@@ -106,7 +109,15 @@ function Screen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.h1}>Referral SDK demo</Text>
+      <Text style={styles.h1}>Blynk Recovery Demo</Text>
+      <Text style={styles.intro}>
+        A live demo of blynk-deferlink's deferred deep linking recovery — an
+        open-source alternative to Branch/AppFlyer for referral and install
+        attribution. The 3 buttons below simulate a real referral link tap,
+        then recover it here exactly like a production app would (Android:
+        Install Referrer, deterministic · iOS: fingerprint match), against
+        the real backend. github.com/Newtdev/blynk-deferlink
+      </Text>
 
       <View style={styles.card}>
         <Text style={styles.label}>useReferralCode()</Text>
@@ -195,6 +206,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0b0f' },
   container: { padding: 20, gap: 12 },
   h1: { color: '#fff', fontSize: 24, fontWeight: '700', marginBottom: 4 },
+  intro: { color: '#a5a5b0', fontSize: 13, lineHeight: 18, marginBottom: 8 },
   card: { backgroundColor: '#17171f', borderRadius: 14, padding: 16, gap: 4 },
   label: { color: '#8b8b96', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1 },
   value: { color: '#fff', fontSize: 28, fontWeight: '700' },

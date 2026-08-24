@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "Referral Example",
-    "slug": "referral-example",
+    "name": "Blynk Recovery Demo",
+    "slug": "blynk-recovery-demo",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "myapp",
     "platforms": ["ios", "android"],
-    "android": { "package": "com.example.app" },
-    "ios": { "bundleIdentifier": "com.example.app" }
+    "android": { "package": "dev.blynkdeferlink.demo" },
+    "ios": { "bundleIdentifier": "dev.blynkdeferlink.demo" }
   }
 }
