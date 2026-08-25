@@ -31,7 +31,7 @@ import { ReferralProvider, ReferralLanding, useFingerprint } from '@blynk-deferl
 
 const API_BASE = import.meta.env.VITE_API_ENDPOINT ?? 'http://localhost:8787/api';
 const CLIPBOARD_PREFIX = 'deferlink_ref:v1:';
-const CODE_PATTERN = /^[A-Za-z]+[0-9]{4}$/;
+const CODE_PATTERN = /^[A-Za-z]+\d{4}$/;
 
 interface ClaimApiResponse {
   success: boolean;

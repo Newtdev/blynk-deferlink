@@ -1,9 +1,12 @@
 import {
+  Linking,
   Platform,
   SafeAreaView,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -25,14 +28,14 @@ import {
 // referral-sdk-node.md for pointing this at your own backend instead.
 const API = __DEV__ ? 'http://localhost:8787/api' : 'https://referral-sdk-node.vercel.app/api';
 
-// The actual web demo — same backend, real click registration, real
-// countdown/redirect, real clipboard write. Generating a code and opening
-// the link there, on this same device/simulator, is what produces the real
-// click this screen's own automatic recovery below finds — see the
-// walkthrough in the card below. Not a link this app opens itself: the
-// whole point is registering the click from an actual mobile browser,
-// exactly like a real referred user would.
-const WEB_DEMO = __DEV__ ? 'http://localhost:5173/demo' : 'https://referral-web-demo.vercel.app/demo';
+// Same origin the web demo is deployed at — the generated link below is
+// built against this, in the /referral/:code shape the README documents
+// (see docs/decisions.md #3), just under /demo so it lands on the demo's
+// own "app opened" fallback instead of a real store listing (none
+// published yet — see examples/web/src/DemoPage.tsx's top-of-file comment).
+// On a physical device, localhost won't reach your dev machine either —
+// same caveat as API below — set this to your LAN IP:5173 there.
+const WEB_ORIGIN = __DEV__ ? 'http://localhost:5173' : 'https://referral-web-demo.vercel.app';
 
 const config: ReferralConfig = {
   apiEndpoint: API,
@@ -40,6 +43,16 @@ const config: ReferralConfig = {
   onCodeFound: (code, method) => console.log('onCodeFound', code, method),
   onNoCode: () => console.log('onNoCode'),
 };
+
+const CODE_PATTERN = /^[A-Za-z]+\d{4}$/;
+
+function genCode(): string {
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let prefix = '';
+  for (let i = 0; i < 3; i++) prefix += letters[Math.floor(Math.random() * letters.length)];
+  const digits = String(Math.floor(1000 + Math.random() * 9000));
+  return `${prefix}${digits}`;
+}
 
 export default function App() {
   return (
@@ -61,9 +74,30 @@ function Screen() {
   const { code, method, confidence, loading, claim, onClipboardCode } = useReferralCode();
   const [log, setLog] = useState<string[]>([]);
   const [reward, setReward] = useState<string | null>(null);
+  const [refCode, setRefCode] = useState(genCode);
 
   const append = (line: string) =>
     setLog((prev) => [`${new Date().toLocaleTimeString()}  ${line}`, ...prev]);
+
+  const codeValid = CODE_PATTERN.test(refCode);
+  const link = `${WEB_ORIGIN}/demo/referral/${refCode}`;
+
+  const openLink = async () => {
+    try {
+      await Linking.openURL(link);
+      append(`opened ${link}`);
+    } catch (e) {
+      append(`couldn't open link: ${(e as Error).message}`);
+    }
+  };
+
+  const shareLink = async () => {
+    try {
+      await Share.share({ message: link });
+    } catch (e) {
+      append(`share failed: ${(e as Error).message}`);
+    }
+  };
 
   const doClaim = async () => {
     const result = await claim('demo-user-1');
@@ -86,18 +120,33 @@ function Screen() {
       </Text>
 
       <View style={styles.card}>
-        <Text style={styles.label}>To see a real recovery</Text>
-        <Text style={styles.step2}>
-          1. On this same device/simulator, open {WEB_DEMO} in the browser.
-        </Text>
-        <Text style={styles.step2}>
-          2. Create a code, open the generated link, and let it redirect (or
-          tap through) — that registers a real click from this device.
-        </Text>
-        <Text style={styles.step2}>
-          3. Come back here — the card below already ran automatically the
-          moment this app opened, same as a real launch.
-        </Text>
+        <Text style={styles.label}>Generate a referral link</Text>
+        <TextInput
+          style={styles.input}
+          value={refCode}
+          onChangeText={(t) => setRefCode(t.toUpperCase())}
+          placeholder="REF1234"
+          placeholderTextColor="#55555f"
+          autoCapitalize="characters"
+          autoCorrect={false}
+        />
+        {!codeValid && (
+          <Text style={styles.error}>Needs letters followed by exactly 4 digits — e.g. REF1234.</Text>
+        )}
+        {codeValid && (
+          <>
+            <Text style={styles.linkText}>{link}</Text>
+            <View style={styles.row}>
+              <Button label="Open link" onPress={openLink} />
+              <Button label="Share" onPress={shareLink} variant="ghost" />
+            </View>
+            <Text style={styles.meta}>
+              Opens the real landing page in your browser — real countdown, real click
+              registration, real clipboard handoff. Come back here after: the card below already
+              recovers automatically, same as a real launch.
+            </Text>
+          </>
+        )}
       </View>
 
       <View style={styles.card}>
@@ -163,20 +212,22 @@ function Screen() {
 function Button({
   label,
   onPress,
+  variant = 'solid',
   disabled = false,
 }: {
   label: string;
   onPress: () => void;
+  variant?: 'solid' | 'ghost';
   disabled?: boolean;
 }) {
   return (
     <TouchableOpacity
-      style={[styles.btn, disabled && styles.btnDisabled]}
+      style={[styles.btn, variant === 'ghost' && styles.btnGhost, disabled && styles.btnDisabled]}
       onPress={onPress}
       activeOpacity={0.85}
       disabled={disabled}
     >
-      <Text style={styles.btnText}>{label}</Text>
+      <Text style={[styles.btnText, variant === 'ghost' && styles.btnTextGhost]}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -191,11 +242,34 @@ const styles = StyleSheet.create({
   value: { color: '#fff', fontSize: 28, fontWeight: '700' },
   meta: { color: '#a5a5b0', fontSize: 13 },
   step: { color: '#c9c9d1', fontSize: 13, marginTop: 12, fontWeight: '600' },
-  step2: { color: '#c9c9d1', fontSize: 13, marginTop: 4 },
+  input: {
+    marginTop: 6,
+    backgroundColor: '#0b0b0f',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#3a3a45',
+    color: '#fff',
+    fontFamily: 'monospace',
+    fontSize: 16,
+    padding: 10,
+  },
+  error: { color: '#ff8a8a', fontSize: 12, marginTop: 4 },
+  linkText: {
+    color: '#8ab4ff',
+    fontFamily: 'monospace',
+    fontSize: 12,
+    marginTop: 8,
+    backgroundColor: '#0b0b0f',
+    borderRadius: 6,
+    padding: 8,
+  },
+  row: { flexDirection: 'row', gap: 8, marginTop: 8 },
   pasteBtn: { height: 48, marginTop: 4 },
-  btn: { backgroundColor: '#6C63FF', borderRadius: 12, padding: 15, alignItems: 'center', marginTop: 4 },
+  btn: { backgroundColor: '#6C63FF', borderRadius: 12, padding: 15, alignItems: 'center', marginTop: 4, flex: 1 },
+  btnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#3a3a45' },
   btnDisabled: { opacity: 0.4 },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  btnTextGhost: { color: '#c9c9d1' },
   result: { color: '#7dffa0', fontSize: 15, fontWeight: '600', marginTop: 6 },
   logBox: { backgroundColor: '#101017', borderRadius: 12, padding: 12, minHeight: 90 },
   logEmpty: { color: '#55555f', fontStyle: 'italic' },
