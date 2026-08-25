@@ -37,8 +37,8 @@ const config: ReferralConfig = {
 const STAGES = [
   { key: 'link', label: 'Link' },
   { key: 'store', label: 'Store' },
-  { key: 'opening', label: 'Opens' },
-  { key: 'result', label: 'Recovered' },
+  { key: 'opening', label: 'Recovers' },
+  { key: 'result', label: 'Claimed' },
 ] as const;
 type Stage = (typeof STAGES)[number]['key'];
 
@@ -69,6 +69,7 @@ function Screen() {
   const [log, setLog] = useState<string[]>([]);
   const [stage, setStage] = useState<Stage>('link');
   const [installing, setInstalling] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [result, setResult] = useState<DemoResult | null>(null);
   const [reward, setReward] = useState<string | null>(null);
   const openingStarted = useRef(false);
@@ -115,12 +116,18 @@ function Screen() {
     }, 900);
   };
 
-  // Step 2: the moment the app "opens" — Android recovers itself via the
-  // real Install Referrer/fingerprint path automatically, same as a real
-  // first launch. Guarded against double-firing if this effect re-runs.
+  // Step 2: the moment the app "opens", recovery runs automatically for
+  // *both* platforms — no gesture required, matching the README's own
+  // flow diagram: Android reads the Install Referrer, iOS falls straight
+  // to an automatic fingerprint match. The paste button below (iOS only)
+  // is an optional, tap-triggered override on top of this, not the only
+  // path — gating this call to Android-only would leave iOS stuck forever
+  // whenever the button isn't tapped, which the README documents as the
+  // default case. Guarded against double-firing if this effect re-runs.
   useEffect(() => {
-    if (stage !== 'opening' || Platform.OS !== 'android' || openingStarted.current) return;
+    if (stage !== 'opening' || openingStarted.current) return;
     openingStarted.current = true;
+    setRecovering(true);
     (async () => {
       const recovered = await service.recover();
       if (recovered.code) {
@@ -129,11 +136,12 @@ function Screen() {
       } else {
         append('no code recovered');
       }
-      setStage('result');
+      setRecovering(false);
     })();
   }, [stage, service]);
 
-  // Step 3: claim after "signup".
+  // Step 3: claim after "signup" — a deliberate user action, distinct from
+  // the automatic recovery above.
   const doClaim = async () => {
     const claimed = await claim('demo-user-1');
     if (claimed.success) {
@@ -142,6 +150,7 @@ function Screen() {
     } else {
       append(`claim failed: ${claimed.error}`);
     }
+    setStage('result');
   };
 
   const restart = () => {
@@ -149,6 +158,7 @@ function Screen() {
     setResult(null);
     setReward(null);
     setInstalling(false);
+    setRecovering(false);
     openingStarted.current = false;
     setStage('link');
     append('storage reset');
@@ -220,33 +230,55 @@ function Screen() {
 
       {stage === 'opening' && (
         <View style={styles.card}>
-          <Text style={styles.value}>Opening app…</Text>
+          <Text style={styles.value}>{recovering ? 'Opening app…' : 'App opened'}</Text>
           {Platform.OS === 'android' ? (
-            <Text style={styles.meta}>Checking the Play Install Referrer — deterministic.</Text>
+            <Text style={styles.meta}>
+              {recovering ? 'Checking the Play Install Referrer — deterministic.' : 'Checked the Play Install Referrer.'}
+            </Text>
           ) : (
-            <>
-              <Text style={styles.meta}>
-                Your app checks the clipboard on first launch. Apple requires the user to confirm
-                this via the system paste control — tap it below, same as a real app.
-              </Text>
-              {/* Themed icon+label: the recommended pattern — keeps the system
-                  "Paste" icon+text (Apple won't let that part go), themed to
-                  the app's own brand color so it reads as part of the UI
-                  instead of a bare system control. */}
-              <ReferralPasteButton
-                onCode={(c, token) => {
-                  onClipboardCode(c, token);
-                  append(`clipboard paste → ${c}${token ? '' : ' (no token — will fail to claim)'}`);
-                  setResult({ code: c, method: 'clipboard', confidence: null });
-                  setStage('result');
-                }}
-                style={styles.pasteBtn}
-                pasteForegroundColor="#FFFFFF"
-                pasteBackgroundColor="#6C63FF"
-                cornerStyle="medium"
-              />
-            </>
+            <Text style={styles.meta}>
+              {recovering
+                ? 'Running the automatic fingerprint match — no gesture required, same as a real launch.'
+                : 'Automatic fingerprint match ran on launch, no gesture required.'}{' '}
+              Tapping the system paste control below overrides it with the deterministic clipboard
+              result, same as a real app — this is optional, matching the README: iOS gets the
+              deterministic path only if the app renders this button and the user taps it.
+            </Text>
           )}
+
+          {result ? (
+            <>
+              <Text style={styles.result}>Recovered: {result.code}</Text>
+              <Text style={styles.meta}>
+                method: {result.method}
+                {result.confidence != null ? ` · confidence ${result.confidence}` : ''}
+              </Text>
+            </>
+          ) : (
+            !recovering && <Text style={styles.meta}>No code recovered.</Text>
+          )}
+
+          {Platform.OS === 'ios' && (
+            // Themed icon+label: the recommended pattern — keeps the system
+            // "Paste" icon+text (Apple won't let that part go), themed to
+            // the app's own brand color so it reads as part of the UI
+            // instead of a bare system control. Always available here,
+            // independent of the automatic result above — tapping it
+            // overrides whatever recover() found, exactly like a real app.
+            <ReferralPasteButton
+              onCode={(c, token) => {
+                onClipboardCode(c, token);
+                append(`clipboard paste → ${c}${token ? '' : ' (no token — will fail to claim)'}`);
+                setResult({ code: c, method: 'clipboard', confidence: null });
+              }}
+              style={styles.pasteBtn}
+              pasteForegroundColor="#FFFFFF"
+              pasteBackgroundColor="#6C63FF"
+              cornerStyle="medium"
+            />
+          )}
+
+          <Button label="Continue as new user" onPress={doClaim} disabled={recovering} />
         </View>
       )}
 
@@ -263,11 +295,7 @@ function Screen() {
           ) : (
             <Text style={styles.meta}>No code recovered.</Text>
           )}
-          {reward ? (
-            <Text style={styles.result}>Claimed → {reward}</Text>
-          ) : (
-            <Button label="Continue as new user" onPress={doClaim} />
-          )}
+          {reward && <Text style={styles.result}>Claimed → {reward}</Text>}
           <Button label="Restart demo" variant="ghost" onPress={restart} />
         </View>
       )}
@@ -292,16 +320,19 @@ function Button({
   label,
   onPress,
   variant = 'solid',
+  disabled = false,
 }: {
   label: string;
   onPress: () => void;
   variant?: 'solid' | 'ghost';
+  disabled?: boolean;
 }) {
   return (
     <TouchableOpacity
-      style={[styles.btn, variant === 'ghost' && styles.btnGhost]}
+      style={[styles.btn, variant === 'ghost' && styles.btnGhost, disabled && styles.btnDisabled]}
       onPress={onPress}
       activeOpacity={0.85}
+      disabled={disabled}
     >
       <Text style={[styles.btnText, variant === 'ghost' && styles.btnTextGhost]}>
         {label}
@@ -359,6 +390,7 @@ const styles = StyleSheet.create({
   pasteBtn: { height: 48, marginTop: 10 },
   btn: { backgroundColor: '#6C63FF', borderRadius: 12, padding: 15, alignItems: 'center', marginTop: 4 },
   btnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#3a3a45' },
+  btnDisabled: { opacity: 0.4 },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
   btnTextGhost: { color: '#c9c9d1' },
   result: { color: '#7dffa0', fontSize: 15, fontWeight: '600', marginTop: 6 },

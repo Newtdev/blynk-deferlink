@@ -116,6 +116,23 @@ export function DemoPage() {
       pushLog({ label: 'POST /referral/click', status, request: body, response: data });
       if (data.success && data.token) {
         setClickToken(data.token);
+        // iOS only, and called synchronously from *this* click handler,
+        // mirroring the SDK's own redirectToStore — writeClipboardReferral
+        // needs a real user gesture underneath it (Safari rejects a
+        // gesture-less navigator.clipboard.writeText(); see
+        // docs/decisions.md #15/#18). One await here is fine — matches
+        // production, which also awaits click registration first — but it
+        // can't be deferred into a useEffect/setTimeout after this handler
+        // returns, or the gesture is gone and the write silently no-ops.
+        if (platform === 'ios') {
+          await writeClipboardReferral(code, data.token);
+          pushLog({
+            label: 'writeClipboardReferral()',
+            status: 0,
+            request: { code, token: data.token },
+            response: { note: 'written to your system clipboard — best-effort, no return value' },
+          });
+        }
         setStage('store');
       }
     } catch (err) {
@@ -123,7 +140,7 @@ export function DemoPage() {
     } finally {
       setBusy(null);
     }
-  }, [code, collect, pushLog]);
+  }, [code, collect, platform, pushLog]);
 
   const installFromStore = useCallback(() => {
     setInstalling(true);
@@ -156,17 +173,6 @@ export function DemoPage() {
     }
   }, [clickToken, pushLog, finish]);
 
-  const writeIosClipboard = useCallback(async () => {
-    if (!clickToken) return;
-    await writeClipboardReferral(code, clickToken);
-    pushLog({
-      label: 'writeClipboardReferral()',
-      status: 0,
-      request: { code, token: clickToken },
-      response: { note: 'written to your system clipboard — best-effort, no return value' },
-    });
-  }, [code, clickToken, pushLog]);
-
   const submitPaste = useCallback(async () => {
     if (!pasted.startsWith(CLIPBOARD_PREFIX)) {
       setPasteError(`Doesn't look like a referral payload — expected it to start with "${CLIPBOARD_PREFIX}".`);
@@ -189,15 +195,17 @@ export function DemoPage() {
     }
   }, [pasted, pushLog, finish]);
 
-  // Kick off the platform-appropriate recovery the moment the "app opens" —
-  // guarded against React 18's double-invoke in dev, since this makes a real
-  // network call (Android) or writes the real clipboard (iOS).
+  // Android recovers the moment the "app opens" — a plain network call, no
+  // gesture requirement, so a useEffect is fine here (guarded against React
+  // 18's double-invoke in dev, since this is a real request). iOS's
+  // clipboard write already happened back in tapLink(), synchronously with
+  // the click that "left" the landing page — it can't happen here instead;
+  // see the comment there.
   useEffect(() => {
-    if (stage !== 'opening' || openingStarted.current) return;
+    if (stage !== 'opening' || platform !== 'android' || openingStarted.current) return;
     openingStarted.current = true;
-    if (platform === 'android') recoverAndroid();
-    else writeIosClipboard();
-  }, [stage, platform, recoverAndroid, writeIosClipboard]);
+    recoverAndroid();
+  }, [stage, platform, recoverAndroid]);
 
   const tryFallback = useCallback(async () => {
     setFallback({ busy: true, outcome: null });
@@ -310,9 +318,11 @@ export function DemoPage() {
           {platform === 'ios' && (
             <div className="demo-paste">
               <p className="demo-method-note">
-                The token was just written to your real clipboard via the same production function
-                the SDK uses. Your app would read this automatically on a real device; browsers
-                require an explicit paste, so do that here to see the exact wire payload.
+                Back when you tapped the invite link, this page wrote the token to your real
+                clipboard — the same production function the SDK uses, timed to that click so a
+                real browser actually allows it. Your app would read this automatically on a real
+                device; browsers require an explicit paste, so do that here to see the exact wire
+                payload.
               </p>
               <label htmlFor="paste-input">Paste (⌘V / Ctrl+V):</label>
               <input
