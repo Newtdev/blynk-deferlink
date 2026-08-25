@@ -28,14 +28,18 @@ import {
 // referral-sdk-node.md for pointing this at your own backend instead.
 const API = __DEV__ ? 'http://localhost:8787/api' : 'https://referral-sdk-node.vercel.app/api';
 
-// Same origin the web demo is deployed at — the generated link below is
+// Always the real deployed site, never localhost — unlike API above, this
+// URL isn't just fetched from this app, it's meant to be opened in a real
+// browser and handed to Share (another device, another person). A
+// localhost link would be useless the moment it leaves this machine, and
+// broken even on this machine's own physical device. The generated link is
 // built against this, in the /referral/:code shape the README documents
 // (see docs/decisions.md #3), just under /demo so it lands on the demo's
 // own "app opened" fallback instead of a real store listing (none
 // published yet — see examples/web/src/DemoPage.tsx's top-of-file comment).
-// On a physical device, localhost won't reach your dev machine either —
-// same caveat as API below — set this to your LAN IP:5173 there.
-const WEB_ORIGIN = __DEV__ ? 'http://localhost:5173' : 'https://referral-web-demo.vercel.app';
+// Point this at a tunneled URL (ngrok or similar) instead if you need to
+// test against local backend/frontend changes that aren't deployed yet.
+const WEB_ORIGIN = 'https://referral-web-demo.vercel.app';
 
 const config: ReferralConfig = {
   apiEndpoint: API,
