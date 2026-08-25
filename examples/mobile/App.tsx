@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -33,6 +34,14 @@ const config: ReferralConfig = {
   onNoCode: () => console.log('onNoCode'),
 };
 
+const STAGES = [
+  { key: 'link', label: 'Link' },
+  { key: 'store', label: 'Store' },
+  { key: 'opening', label: 'Opens' },
+  { key: 'result', label: 'Recovered' },
+] as const;
+type Stage = (typeof STAGES)[number]['key'];
+
 export default function App() {
   return (
     <ReferralProvider config={config}>
@@ -43,22 +52,33 @@ export default function App() {
   );
 }
 
+interface DemoResult {
+  code: string;
+  method: string;
+  confidence: number | null;
+}
+
 function Screen() {
   // The production entry point — a signup screen would use exactly this.
+  // It recovers automatically on mount, same as a real app would at launch;
+  // since no click exists yet the first time this screen mounts, it
+  // correctly shows "none yet" until the wizard below registers one.
   const { code, method, confidence, loading, claim, onClipboardCode } = useReferralCode();
 
   const service = useMemo(() => new ReferralService(config), []);
   const [log, setLog] = useState<string[]>([]);
-  const [demoCode, setDemoCode] = useState<string | null>(null);
+  const [stage, setStage] = useState<Stage>('link');
+  const [installing, setInstalling] = useState(false);
+  const [result, setResult] = useState<DemoResult | null>(null);
+  const [reward, setReward] = useState<string | null>(null);
+  const openingStarted = useRef(false);
 
   const append = (line: string) =>
     setLog((prev) => [`${new Date().toLocaleTimeString()}  ${line}`, ...prev]);
 
   // Step 1: pretend the user tapped the invite link in a browser. We store a
   // click carrying this device's own signature so the later match scores 100.
-  const simulateLinkTap = async () => {
-    await service.reset();
-    setDemoCode(null);
+  const tapLink = async () => {
     const fp = await collectFingerprint();
     const ua =
       fp.platform === 'ios'
@@ -81,31 +101,60 @@ function Screen() {
       });
       const data = await res.json();
       append(`link tapped → click ${data.click_id?.slice(0, 8)} stored`);
+      setStage('store');
     } catch (e) {
       append(`click failed: ${(e as Error).message} (is the backend running?)`);
     }
   };
 
-  // Step 2: run the same recovery the app does on first launch.
-  const recover = async () => {
-    const result = await service.recover();
-    setDemoCode(result.code);
-    append(
-      result.code
-        ? `recovered ${result.code} via ${result.method} (${result.confidence})`
-        : 'no code recovered',
-    );
+  const installFromStore = () => {
+    setInstalling(true);
+    setTimeout(() => {
+      setInstalling(false);
+      setStage('opening');
+    }, 900);
   };
+
+  // Step 2: the moment the app "opens" — Android recovers itself via the
+  // real Install Referrer/fingerprint path automatically, same as a real
+  // first launch. Guarded against double-firing if this effect re-runs.
+  useEffect(() => {
+    if (stage !== 'opening' || Platform.OS !== 'android' || openingStarted.current) return;
+    openingStarted.current = true;
+    (async () => {
+      const recovered = await service.recover();
+      if (recovered.code) {
+        setResult({ code: recovered.code, method: recovered.method ?? 'unknown', confidence: recovered.confidence ?? null });
+        append(`recovered ${recovered.code} via ${recovered.method} (${recovered.confidence})`);
+      } else {
+        append('no code recovered');
+      }
+      setStage('result');
+    })();
+  }, [stage, service]);
 
   // Step 3: claim after "signup".
   const doClaim = async () => {
-    const result = await claim('demo-user-1');
-    append(
-      result.success
-        ? `claimed → ${result.reward?.amount} ${result.reward?.type}`
-        : `claim failed: ${result.error}`,
-    );
+    const claimed = await claim('demo-user-1');
+    if (claimed.success) {
+      setReward(`${claimed.reward?.amount} ${claimed.reward?.type}`);
+      append(`claimed → ${claimed.reward?.amount} ${claimed.reward?.type}`);
+    } else {
+      append(`claim failed: ${claimed.error}`);
+    }
   };
+
+  const restart = () => {
+    service.reset();
+    setResult(null);
+    setReward(null);
+    setInstalling(false);
+    openingStarted.current = false;
+    setStage('link');
+    append('storage reset');
+  };
+
+  const stageIndex = STAGES.findIndex((s) => s.key === stage);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -113,16 +162,14 @@ function Screen() {
       <Text style={styles.intro}>
         A live demo of blynk-deferlink's deferred deep linking recovery — an
         open-source alternative to Branch/AppFlyer for referral and install
-        attribution. The 3 buttons below simulate a real referral link tap,
-        then recover it here exactly like a production app would (Android:
-        Install Referrer, deterministic · iOS: fingerprint match), against
-        the real backend. github.com/Newtdev/blynk-deferlink
+        attribution, against the real backend.
+        github.com/Newtdev/blynk-deferlink
       </Text>
 
       <View style={styles.card}>
-        <Text style={styles.label}>useReferralCode()</Text>
+        <Text style={styles.label}>useReferralCode() — automatic check on launch</Text>
         <Text style={styles.value}>
-          {loading ? 'recovering…' : code ? code : '— (none yet)'}
+          {loading ? 'recovering…' : code || '— (none yet)'}
         </Text>
         {method ? (
           <Text style={styles.meta}>
@@ -132,37 +179,98 @@ function Screen() {
         ) : null}
       </View>
 
-      {/* iOS-only deterministic tier — renders nothing on Android or iOS <16.
-          Themed icon+label: the recommended pattern — keeps the system
-          "Paste" icon+text (Apple won't let that part go), themed to the
-          app's own brand color so it reads as part of the UI instead of
-          a bare system control. See the package README's "Theming"
-          section for the icon-only/custom-copy alternative. */}
-      <Text style={styles.step}>Paste referral code (iOS clipboard handoff):</Text>
-      <ReferralPasteButton
-        onCode={(c, token) => {
-          onClipboardCode(c, token);
-          append(`clipboard paste → ${c}${token ? '' : ' (no token — will fail to claim)'}`);
-        }}
-        style={styles.pasteBtn}
-        pasteForegroundColor="#FFFFFF"
-        pasteBackgroundColor="#6C63FF"
-        cornerStyle="medium"
-      />
+      <View style={styles.stepper}>
+        {STAGES.map((s, i) => (
+          <Text
+            key={s.key}
+            style={[
+              styles.stepperItem,
+              i === stageIndex && styles.stepperActive,
+              i < stageIndex && styles.stepperDone,
+            ]}
+          >
+            {s.label}
+          </Text>
+        ))}
+      </View>
 
-      <Text style={styles.step}>Walk the flow:</Text>
-      <Button label="1 · Simulate tapping the invite link" onPress={simulateLinkTap} />
-      <Button label="2 · Recover code (first-launch flow)" onPress={recover} />
-      <Button label="3 · Claim as new user" onPress={doClaim} />
-      <Button label="Reset" variant="ghost" onPress={async () => {
-        await service.reset();
-        setDemoCode(null);
-        append('storage reset');
-      }} />
+      {stage === 'link' && (
+        <View style={styles.card}>
+          <Text style={styles.linkFrom}>📲 A friend sent you an invite</Text>
+          <Button label="Tap the invite link" onPress={tapLink} />
+        </View>
+      )}
 
-      {demoCode ? (
-        <Text style={styles.result}>Last demo recovery: {demoCode}</Text>
-      ) : null}
+      {stage === 'store' && (
+        <View style={[styles.card, styles.storeRow]}>
+          <View style={styles.storeIcon}>
+            <Text style={styles.storeIconText}>BD</Text>
+          </View>
+          <View style={styles.storeMeta}>
+            <Text style={styles.storeName}>Blynk Deferlink Demo</Text>
+            <Text style={styles.storeSub}>
+              {Platform.OS === 'ios' ? 'App Store' : 'Google Play'} · ★★★★☆ · Free
+            </Text>
+          </View>
+          <TouchableOpacity style={styles.btnSmall} onPress={installFromStore} disabled={installing}>
+            <Text style={styles.btnText}>{installing ? 'Installing…' : 'Install'}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {stage === 'opening' && (
+        <View style={styles.card}>
+          <Text style={styles.value}>Opening app…</Text>
+          {Platform.OS === 'android' ? (
+            <Text style={styles.meta}>Checking the Play Install Referrer — deterministic.</Text>
+          ) : (
+            <>
+              <Text style={styles.meta}>
+                Your app checks the clipboard on first launch. Apple requires the user to confirm
+                this via the system paste control — tap it below, same as a real app.
+              </Text>
+              {/* Themed icon+label: the recommended pattern — keeps the system
+                  "Paste" icon+text (Apple won't let that part go), themed to
+                  the app's own brand color so it reads as part of the UI
+                  instead of a bare system control. */}
+              <ReferralPasteButton
+                onCode={(c, token) => {
+                  onClipboardCode(c, token);
+                  append(`clipboard paste → ${c}${token ? '' : ' (no token — will fail to claim)'}`);
+                  setResult({ code: c, method: 'clipboard', confidence: null });
+                  setStage('result');
+                }}
+                style={styles.pasteBtn}
+                pasteForegroundColor="#FFFFFF"
+                pasteBackgroundColor="#6C63FF"
+                cornerStyle="medium"
+              />
+            </>
+          )}
+        </View>
+      )}
+
+      {stage === 'result' && (
+        <View style={styles.card}>
+          {result ? (
+            <>
+              <Text style={styles.result}>Recovered: {result.code}</Text>
+              <Text style={styles.meta}>
+                method: {result.method}
+                {result.confidence != null ? ` · confidence ${result.confidence}` : ''}
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.meta}>No code recovered.</Text>
+          )}
+          {reward ? (
+            <Text style={styles.result}>Claimed → {reward}</Text>
+          ) : (
+            <Button label="Continue as new user" onPress={doClaim} />
+          )}
+          <Button label="Restart demo" variant="ghost" onPress={restart} />
+        </View>
+      )}
 
       <Text style={styles.step}>Log</Text>
       <View style={styles.logBox}>
@@ -212,6 +320,33 @@ const styles = StyleSheet.create({
   value: { color: '#fff', fontSize: 28, fontWeight: '700' },
   meta: { color: '#a5a5b0', fontSize: 13 },
   step: { color: '#c9c9d1', fontSize: 13, marginTop: 12, fontWeight: '600' },
+  stepper: { flexDirection: 'row', gap: 6, marginTop: 4 },
+  stepperItem: {
+    flex: 1,
+    textAlign: 'center',
+    color: '#55555f',
+    fontSize: 11,
+    paddingBottom: 6,
+    borderBottomWidth: 2,
+    borderBottomColor: '#26262f',
+  },
+  stepperActive: { color: '#fff', fontWeight: '700', borderBottomColor: '#6C63FF' },
+  stepperDone: { color: '#a5a5b0', borderBottomColor: '#55555f' },
+  linkFrom: { color: '#fff', fontSize: 16, marginBottom: 10 },
+  storeRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  storeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#6C63FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storeIconText: { color: '#fff', fontWeight: '700' },
+  storeMeta: { flex: 1, gap: 2 },
+  storeName: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  storeSub: { color: '#a5a5b0', fontSize: 12 },
+  btnSmall: { backgroundColor: '#6C63FF', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 14 },
   // Matches btn below as closely as UIPasteControl allows: same background/
   // text color and same rendered height (btn's height comes from its own
   // padding: 15 + ~18pt line height at fontSize 15, so 48 here reproduces
@@ -221,8 +356,8 @@ const styles = StyleSheet.create({
   // arbitrary radius, only named styles, and 'fixed' (tried first, by
   // name alone) turned out visibly too subtle; 'medium' is the actual
   // match.
-  pasteBtn: { height: 48, marginTop: 4 },
-  btn: { backgroundColor: '#6C63FF', borderRadius: 12, padding: 15, alignItems: 'center' },
+  pasteBtn: { height: 48, marginTop: 10 },
+  btn: { backgroundColor: '#6C63FF', borderRadius: 12, padding: 15, alignItems: 'center', marginTop: 4 },
   btnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#3a3a45' },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
   btnTextGhost: { color: '#c9c9d1' },
