@@ -136,9 +136,12 @@ design.
 ## Quick start — run the demo
 
 **Don't want to clone anything yet?** [Try the recovery flow live](https://referral-web-demo.vercel.app/demo)
-— registers a real click against the live backend, then walks through all
-three recovery methods (Android install-referrer, iOS clipboard,
-fingerprint-only fallback) with the actual request/response for each.
+— pick a referral code and it builds a real link to the actual production
+landing page (real countdown, real click registration, real clipboard
+handoff), then recovers it exactly how a real installed app would (Android:
+automatic via the Play referrer param; iOS: a real clipboard check, falling
+back to a real fingerprint match), with the actual request/response for
+every step.
 
 Otherwise, the fastest way to see the whole thing work locally, before
 installing anything for real. Three terminals. No PHP or database required
@@ -160,9 +163,12 @@ Open the web page with `?code=1234` and watch the backend log the click. On
 desktop it shows both store buttons; on a phone browser it attempts the app
 handoff then redirects to the store.
 
-In the mobile app, walk the three buttons — simulate the link tap, recover the
-code, claim — and watch the on-screen log and the backend console mirror each
-other.
+The mobile app's top card recovers automatically on launch, same as a real
+app — there's nothing to simulate inside it. To see it actually find
+something, open `http://localhost:5173/demo` in a browser **on the same
+device/simulator** first (the app's own screen walks you through this),
+create a code, and let the generated link's landing page register a real
+click before switching back to the app.
 
 ### Mobile notes
 

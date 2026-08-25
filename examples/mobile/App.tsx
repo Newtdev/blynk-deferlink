@@ -1,4 +1,3 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
   SafeAreaView,
@@ -8,11 +7,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useState } from 'react';
 import {
   ReferralProvider,
-  ReferralService,
   ReferralPasteButton,
-  collectFingerprint,
   useReferralCode,
   type ReferralConfig,
 } from '@blynk-deferlink/referral-mobile';
@@ -27,20 +25,21 @@ import {
 // referral-sdk-node.md for pointing this at your own backend instead.
 const API = __DEV__ ? 'http://localhost:8787/api' : 'https://referral-sdk-node.vercel.app/api';
 
+// The actual web demo — same backend, real click registration, real
+// countdown/redirect, real clipboard write. Generating a code and opening
+// the link there, on this same device/simulator, is what produces the real
+// click this screen's own automatic recovery below finds — see the
+// walkthrough in the card below. Not a link this app opens itself: the
+// whole point is registering the click from an actual mobile browser,
+// exactly like a real referred user would.
+const WEB_DEMO = __DEV__ ? 'http://localhost:5173/demo' : 'https://referral-web-demo.vercel.app/demo';
+
 const config: ReferralConfig = {
   apiEndpoint: API,
   appScheme: 'myapp',
   onCodeFound: (code, method) => console.log('onCodeFound', code, method),
   onNoCode: () => console.log('onNoCode'),
 };
-
-const STAGES = [
-  { key: 'link', label: 'Link' },
-  { key: 'store', label: 'Store' },
-  { key: 'opening', label: 'Recovers' },
-  { key: 'result', label: 'Claimed' },
-] as const;
-type Stage = (typeof STAGES)[number]['key'];
 
 export default function App() {
   return (
@@ -52,119 +51,29 @@ export default function App() {
   );
 }
 
-interface DemoResult {
-  code: string;
-  method: string;
-  confidence: number | null;
-}
-
 function Screen() {
   // The production entry point — a signup screen would use exactly this.
-  // It recovers automatically on mount, same as a real app would at launch;
-  // since no click exists yet the first time this screen mounts, it
-  // correctly shows "none yet" until the wizard below registers one.
+  // It recovers automatically on mount, same as a real app would at
+  // launch: Android reads the Play Install Referrer, iOS runs an automatic
+  // fingerprint match, no gesture required either way (see the README's
+  // own flow diagram). Nothing in this screen simulates that — it's the
+  // real call, and it either finds a real click or it doesn't.
   const { code, method, confidence, loading, claim, onClipboardCode } = useReferralCode();
-
-  const service = useMemo(() => new ReferralService(config), []);
   const [log, setLog] = useState<string[]>([]);
-  const [stage, setStage] = useState<Stage>('link');
-  const [installing, setInstalling] = useState(false);
-  const [recovering, setRecovering] = useState(false);
-  const [result, setResult] = useState<DemoResult | null>(null);
   const [reward, setReward] = useState<string | null>(null);
-  const openingStarted = useRef(false);
 
   const append = (line: string) =>
     setLog((prev) => [`${new Date().toLocaleTimeString()}  ${line}`, ...prev]);
 
-  // Step 1: pretend the user tapped the invite link in a browser. We store a
-  // click carrying this device's own signature so the later match scores 100.
-  const tapLink = async () => {
-    const fp = await collectFingerprint();
-    const ua =
-      fp.platform === 'ios'
-        ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X)'
-        : 'Mozilla/5.0 (Linux; Android 14; Pixel 7)';
-    try {
-      const res = await fetch(`${API}/referral/click`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          referral_code: 'DEMO-42',
-          fingerprint: {
-            user_agent: ua,
-            screen_width: fp.screen_width,
-            screen_height: fp.screen_height,
-            timezone: fp.timezone,
-            language: fp.language,
-          },
-        }),
-      });
-      const data = await res.json();
-      append(`link tapped → click ${data.click_id?.slice(0, 8)} stored`);
-      setStage('store');
-    } catch (e) {
-      append(`click failed: ${(e as Error).message} (is the backend running?)`);
-    }
-  };
-
-  const installFromStore = () => {
-    setInstalling(true);
-    setTimeout(() => {
-      setInstalling(false);
-      setStage('opening');
-    }, 900);
-  };
-
-  // Step 2: the moment the app "opens", recovery runs automatically for
-  // *both* platforms — no gesture required, matching the README's own
-  // flow diagram: Android reads the Install Referrer, iOS falls straight
-  // to an automatic fingerprint match. The paste button below (iOS only)
-  // is an optional, tap-triggered override on top of this, not the only
-  // path — gating this call to Android-only would leave iOS stuck forever
-  // whenever the button isn't tapped, which the README documents as the
-  // default case. Guarded against double-firing if this effect re-runs.
-  useEffect(() => {
-    if (stage !== 'opening' || openingStarted.current) return;
-    openingStarted.current = true;
-    setRecovering(true);
-    (async () => {
-      const recovered = await service.recover();
-      if (recovered.code) {
-        setResult({ code: recovered.code, method: recovered.method ?? 'unknown', confidence: recovered.confidence ?? null });
-        append(`recovered ${recovered.code} via ${recovered.method} (${recovered.confidence})`);
-      } else {
-        append('no code recovered');
-      }
-      setRecovering(false);
-    })();
-  }, [stage, service]);
-
-  // Step 3: claim after "signup" — a deliberate user action, distinct from
-  // the automatic recovery above.
   const doClaim = async () => {
-    const claimed = await claim('demo-user-1');
-    if (claimed.success) {
-      setReward(`${claimed.reward?.amount} ${claimed.reward?.type}`);
-      append(`claimed → ${claimed.reward?.amount} ${claimed.reward?.type}`);
+    const result = await claim('demo-user-1');
+    if (result.success) {
+      setReward(`${result.reward?.amount} ${result.reward?.type}`);
+      append(`claimed → ${result.reward?.amount} ${result.reward?.type}`);
     } else {
-      append(`claim failed: ${claimed.error}`);
+      append(`claim failed: ${result.error}`);
     }
-    setStage('result');
   };
-
-  const restart = () => {
-    service.reset();
-    setResult(null);
-    setReward(null);
-    setInstalling(false);
-    setRecovering(false);
-    openingStarted.current = false;
-    setStage('link');
-    append('storage reset');
-  };
-
-  const stageIndex = STAGES.findIndex((s) => s.key === stage);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -177,10 +86,23 @@ function Screen() {
       </Text>
 
       <View style={styles.card}>
-        <Text style={styles.label}>useReferralCode() — automatic check on launch</Text>
-        <Text style={styles.value}>
-          {loading ? 'recovering…' : code || '— (none yet)'}
+        <Text style={styles.label}>To see a real recovery</Text>
+        <Text style={styles.step2}>
+          1. On this same device/simulator, open {WEB_DEMO} in the browser.
         </Text>
+        <Text style={styles.step2}>
+          2. Create a code, open the generated link, and let it redirect (or
+          tap through) — that registers a real click from this device.
+        </Text>
+        <Text style={styles.step2}>
+          3. Come back here — the card below already ran automatically the
+          moment this app opened, same as a real launch.
+        </Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.label}>useReferralCode() — automatic check on launch</Text>
+        <Text style={styles.value}>{loading ? 'recovering…' : code || '— (none yet)'}</Text>
         {method ? (
           <Text style={styles.meta}>
             method: {method}
@@ -189,116 +111,38 @@ function Screen() {
         ) : null}
       </View>
 
-      <View style={styles.stepper}>
-        {STAGES.map((s, i) => (
-          <Text
-            key={s.key}
-            style={[
-              styles.stepperItem,
-              i === stageIndex && styles.stepperActive,
-              i < stageIndex && styles.stepperDone,
-            ]}
-          >
-            {s.label}
+      {Platform.OS === 'ios' && (
+        <>
+          <Text style={styles.step}>
+            Or tap to check the clipboard directly — overrides the automatic result above if a
+            valid payload is found, same as a real app:
           </Text>
-        ))}
-      </View>
-
-      {stage === 'link' && (
-        <View style={styles.card}>
-          <Text style={styles.linkFrom}>📲 A friend sent you an invite</Text>
-          <Button label="Tap the invite link" onPress={tapLink} />
-        </View>
+          {/* Themed icon+label: the recommended pattern — keeps the system
+              "Paste" icon+text (Apple won't let that part go), themed to the
+              app's own brand color so it reads as part of the UI instead of
+              a bare system control. */}
+          <ReferralPasteButton
+            onCode={(c, token) => {
+              onClipboardCode(c, token);
+              append(`clipboard paste → ${c}${token ? '' : ' (no token — will fail to claim)'}`);
+            }}
+            style={styles.pasteBtn}
+            pasteForegroundColor="#FFFFFF"
+            pasteBackgroundColor="#6C63FF"
+            cornerStyle="medium"
+          />
+        </>
       )}
 
-      {stage === 'store' && (
-        <View style={[styles.card, styles.storeRow]}>
-          <View style={styles.storeIcon}>
-            <Text style={styles.storeIconText}>BD</Text>
-          </View>
-          <View style={styles.storeMeta}>
-            <Text style={styles.storeName}>Blynk Deferlink Demo</Text>
-            <Text style={styles.storeSub}>
-              {Platform.OS === 'ios' ? 'App Store' : 'Google Play'} · ★★★★☆ · Free
-            </Text>
-          </View>
-          <TouchableOpacity style={styles.btnSmall} onPress={installFromStore} disabled={installing}>
-            <Text style={styles.btnText}>{installing ? 'Installing…' : 'Install'}</Text>
-          </TouchableOpacity>
-        </View>
+      {reward ? (
+        <Text style={styles.result}>Claimed → {reward}</Text>
+      ) : (
+        <Button label="Continue as new user" onPress={doClaim} disabled={!code} />
       )}
-
-      {stage === 'opening' && (
-        <View style={styles.card}>
-          <Text style={styles.value}>{recovering ? 'Opening app…' : 'App opened'}</Text>
-          {Platform.OS === 'android' ? (
-            <Text style={styles.meta}>
-              {recovering ? 'Checking the Play Install Referrer — deterministic.' : 'Checked the Play Install Referrer.'}
-            </Text>
-          ) : (
-            <Text style={styles.meta}>
-              {recovering
-                ? 'Running the automatic fingerprint match — no gesture required, same as a real launch.'
-                : 'Automatic fingerprint match ran on launch, no gesture required.'}{' '}
-              Tapping the system paste control below overrides it with the deterministic clipboard
-              result, same as a real app — this is optional, matching the README: iOS gets the
-              deterministic path only if the app renders this button and the user taps it.
-            </Text>
-          )}
-
-          {result ? (
-            <>
-              <Text style={styles.result}>Recovered: {result.code}</Text>
-              <Text style={styles.meta}>
-                method: {result.method}
-                {result.confidence != null ? ` · confidence ${result.confidence}` : ''}
-              </Text>
-            </>
-          ) : (
-            !recovering && <Text style={styles.meta}>No code recovered.</Text>
-          )}
-
-          {Platform.OS === 'ios' && (
-            // Themed icon+label: the recommended pattern — keeps the system
-            // "Paste" icon+text (Apple won't let that part go), themed to
-            // the app's own brand color so it reads as part of the UI
-            // instead of a bare system control. Always available here,
-            // independent of the automatic result above — tapping it
-            // overrides whatever recover() found, exactly like a real app.
-            <ReferralPasteButton
-              onCode={(c, token) => {
-                onClipboardCode(c, token);
-                append(`clipboard paste → ${c}${token ? '' : ' (no token — will fail to claim)'}`);
-                setResult({ code: c, method: 'clipboard', confidence: null });
-              }}
-              style={styles.pasteBtn}
-              pasteForegroundColor="#FFFFFF"
-              pasteBackgroundColor="#6C63FF"
-              cornerStyle="medium"
-            />
-          )}
-
-          <Button label="Continue as new user" onPress={doClaim} disabled={recovering} />
-        </View>
-      )}
-
-      {stage === 'result' && (
-        <View style={styles.card}>
-          {result ? (
-            <>
-              <Text style={styles.result}>Recovered: {result.code}</Text>
-              <Text style={styles.meta}>
-                method: {result.method}
-                {result.confidence != null ? ` · confidence ${result.confidence}` : ''}
-              </Text>
-            </>
-          ) : (
-            <Text style={styles.meta}>No code recovered.</Text>
-          )}
-          {reward && <Text style={styles.result}>Claimed → {reward}</Text>}
-          <Button label="Restart demo" variant="ghost" onPress={restart} />
-        </View>
-      )}
+      <Text style={styles.meta}>
+        No reset button — a fresh app launch (reload the app) always recovers from scratch, same
+        as it would for a real user; the SDK persists nothing to disk.
+      </Text>
 
       <Text style={styles.step}>Log</Text>
       <View style={styles.logBox}>
@@ -319,24 +163,20 @@ function Screen() {
 function Button({
   label,
   onPress,
-  variant = 'solid',
   disabled = false,
 }: {
   label: string;
   onPress: () => void;
-  variant?: 'solid' | 'ghost';
   disabled?: boolean;
 }) {
   return (
     <TouchableOpacity
-      style={[styles.btn, variant === 'ghost' && styles.btnGhost, disabled && styles.btnDisabled]}
+      style={[styles.btn, disabled && styles.btnDisabled]}
       onPress={onPress}
       activeOpacity={0.85}
       disabled={disabled}
     >
-      <Text style={[styles.btnText, variant === 'ghost' && styles.btnTextGhost]}>
-        {label}
-      </Text>
+      <Text style={styles.btnText}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -351,48 +191,11 @@ const styles = StyleSheet.create({
   value: { color: '#fff', fontSize: 28, fontWeight: '700' },
   meta: { color: '#a5a5b0', fontSize: 13 },
   step: { color: '#c9c9d1', fontSize: 13, marginTop: 12, fontWeight: '600' },
-  stepper: { flexDirection: 'row', gap: 6, marginTop: 4 },
-  stepperItem: {
-    flex: 1,
-    textAlign: 'center',
-    color: '#55555f',
-    fontSize: 11,
-    paddingBottom: 6,
-    borderBottomWidth: 2,
-    borderBottomColor: '#26262f',
-  },
-  stepperActive: { color: '#fff', fontWeight: '700', borderBottomColor: '#6C63FF' },
-  stepperDone: { color: '#a5a5b0', borderBottomColor: '#55555f' },
-  linkFrom: { color: '#fff', fontSize: 16, marginBottom: 10 },
-  storeRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  storeIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: '#6C63FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  storeIconText: { color: '#fff', fontWeight: '700' },
-  storeMeta: { flex: 1, gap: 2 },
-  storeName: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  storeSub: { color: '#a5a5b0', fontSize: 12 },
-  btnSmall: { backgroundColor: '#6C63FF', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 14 },
-  // Matches btn below as closely as UIPasteControl allows: same background/
-  // text color and same rendered height (btn's height comes from its own
-  // padding: 15 + ~18pt line height at fontSize 15, so 48 here reproduces
-  // it since the native control has no padding of its own to compute
-  // from). cornerStyle: 'medium' was picked by comparing rendered
-  // screenshots against btn's borderRadius: 12 — UIPasteControl has no
-  // arbitrary radius, only named styles, and 'fixed' (tried first, by
-  // name alone) turned out visibly too subtle; 'medium' is the actual
-  // match.
-  pasteBtn: { height: 48, marginTop: 10 },
+  step2: { color: '#c9c9d1', fontSize: 13, marginTop: 4 },
+  pasteBtn: { height: 48, marginTop: 4 },
   btn: { backgroundColor: '#6C63FF', borderRadius: 12, padding: 15, alignItems: 'center', marginTop: 4 },
-  btnGhost: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#3a3a45' },
   btnDisabled: { opacity: 0.4 },
   btnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  btnTextGhost: { color: '#c9c9d1' },
   result: { color: '#7dffa0', fontSize: 15, fontWeight: '600', marginTop: 6 },
   logBox: { backgroundColor: '#101017', borderRadius: 12, padding: 12, minHeight: 90 },
   logEmpty: { color: '#55555f', fontStyle: 'italic' },
