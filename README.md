@@ -163,12 +163,12 @@ Open the web page with `?code=1234` and watch the backend log the click. On
 desktop it shows both store buttons; on a phone browser it attempts the app
 handoff then redirects to the store.
 
-The mobile app's top card recovers automatically on launch, same as a real
-app — there's nothing to simulate inside it. To see it actually find
-something, open `http://localhost:5173/demo` in a browser **on the same
-device/simulator** first (the app's own screen walks you through this),
-create a code, and let the generated link's landing page register a real
-click before switching back to the app.
+The mobile app recovers automatically on launch, same as a real app —
+there's nothing to simulate inside it. To see it actually find something,
+type a code into its own "Generate a referral link" card and tap **Open
+link** — that opens the real landing page in your device/simulator's
+browser (real countdown, real click registration, real clipboard handoff),
+then switch back to the app to see the recovery.
 
 ### Mobile notes
 
