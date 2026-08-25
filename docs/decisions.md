@@ -1249,3 +1249,56 @@ checked against Apple's own published definition, not guesswork — but
 Apple's review outcomes aren't fully mechanical and the guidelines can
 shift. Worth a real compliance/legal review before the hosted product
 takes its first paying multi-tenant customer, not just this document.
+
+---
+
+## 26. `useReferralClick`'s AbortController silently killed every click in `<React.StrictMode>` dev — Done
+
+**Problem, found rebuilding the web demo to use the real `<ReferralLanding>`
+component end-to-end instead of a hand-rolled mock, then actually running it
+in a real browser (Playwright) rather than trusting a build.** The redirect
+away from the landing page always carried the referral `code` but never a
+`token` — every deterministic recovery downstream was silently unclaimable,
+in the exact same way a manually-typed code always has been (see #21/#22).
+
+Root cause, confirmed by disabling `<React.StrictMode>` and watching the
+click succeed on the first try: React 18's StrictMode deliberately
+double-invokes every effect in development (mount → cleanup → mount) to
+surface exactly this class of bug. `useReferralClick`'s effect had a `sent`
+ref meant to guarantee the click registers exactly once despite that, but
+its cleanup called `controller.abort()` on the underlying fetch. Sequence:
+first invocation sets `sent.current = true` and starts the real fetch;
+StrictMode's synthetic cleanup fires immediately, aborting that *real*
+request before it could complete; the second invocation's `sent.current`
+guard is already tripped, so nothing ever retries. Net effect: **no click
+ever registered at all**, silently — `waitForClick()` never rejects, so
+`redirectToStore` proceeded anyway, exactly as designed for a slow-but-
+legitimate failure, indistinguishable from this one. This broke the
+README's own "Quick start — run the demo" instructions for anyone running
+`examples/web`'s dev server (which wraps everything in `<React.StrictMode>`)
+— the fastest, most-recommended way to evaluate the SDK locally silently
+never produced a claimable recovery.
+
+**Fix.** Removed the `AbortController` entirely — React's own documented
+guidance for this exact pattern (a network request started in an effect,
+StrictMode's double-invoke) is to let the in-flight request complete and
+ignore a stale result via a plain `cancelled` boolean, not abort the
+request. Matches what `packages/referral-mobile`'s `useReferralCode` already
+does for the same reason. A second bug rode along with the first and needed
+its own fix: the initial rewrite gated the `token` assignment itself behind
+`if (cancelled) return`, not just the `setClickId`/`setError` state updates
+— so even with the abort removed, a `cancelled` invocation's *successful*
+response still resolved `waitForClick()`'s promise with `null`, discarding a
+real token the request had actually received. `token` now survives
+regardless of `cancelled`, since `waitForClick()`'s promise is explicitly
+documented to be independent of this component's React lifecycle; only the
+React state setters are gated.
+
+**Verification.** A real Playwright browser (not `curl`, not a build check)
+driving the actual demo end-to-end against the mock backend, for both
+Android and iOS user agents: link generation → the real `<ReferralLanding>`
+countdown/CTA → real click registration → real redirect carrying a valid
+token → real recovery → real `/claim` → real reward, confirmed via captured
+network traffic at every step, with `<React.StrictMode>` left enabled
+throughout (the actual `examples/web` configuration, not a weakened test
+harness).

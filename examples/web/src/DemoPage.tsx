@@ -1,45 +1,48 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useFingerprint, writeClipboardReferral } from '@blynk-deferlink/referral-web';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ReferralProvider, ReferralLanding, useFingerprint } from '@blynk-deferlink/referral-web';
 
 /**
  * A live walkthrough of the recovery mechanism for engineers evaluating the
- * SDK — not a mock. Every request below hits the real deployed backend (same
- * one the actual landing page at "/" uses). There's no real app to install
- * here, so this page stages the parts a real flow would have — the referral
- * link, the store listing, the app opening for the first time — as a wizard,
- * while the actual click/match/claim calls underneath are the genuine thing.
- * Only the "store" screen and the install delay are pure UI theater; nothing
- * in the recovery itself is faked.
+ * SDK — not a mock. This isn't a custom-built simulation of the real flow;
+ * it's three real pages backed by the actual production pieces:
  *
- * A click can only ever be claimed by one device (that's a real product
- * guarantee, not a demo limitation), so each run of the wizard starts a new
- * click.
+ *   /demo             — pick a referral code, get a real link
+ *   /demo/referral/:code — the actual <ReferralLanding> component: real
+ *                          countdown, real click registration, real
+ *                          clipboard handoff timing — the same component
+ *                          examples/web's own "/" route uses for real
+ *                          visitors, just pointed at this demo's own
+ *                          "app opened" screen instead of a real store
+ *                          listing (blynk-deferlink hasn't published one
+ *                          yet — swap androidStoreUrl/iosStoreUrl below for
+ *                          the real ones once it has; nothing else here
+ *                          needs to change).
+ *   /demo/app          — recovers the code exactly how a real installed
+ *                          app would: reads it off the Play referrer param
+ *                          if present (Android, automatic), otherwise
+ *                          checks the real clipboard (iOS, requires the tap
+ *                          below — same gesture requirement a real
+ *                          UIPasteControl has), falling back to a real
+ *                          fingerprint match if nothing valid is there.
+ *
+ * No router dependency, matching the rest of this example app — see
+ * main.tsx.
  */
 
 const API_BASE = import.meta.env.VITE_API_ENDPOINT ?? 'http://localhost:8787/api';
 const CLIPBOARD_PREFIX = 'deferlink_ref:v1:';
+const CODE_PATTERN = /^[A-Za-z]+[0-9]{4}$/;
 
-type Platform = 'android' | 'ios';
-type Stage = 'landing' | 'store' | 'opening' | 'result';
-
-interface ClickApiResponse {
+interface ClaimApiResponse {
   success: boolean;
-  click_id?: string;
-  token?: string;
+  reward?: { type: string; amount: number };
   error?: string;
 }
 interface MatchApiResponse {
   matched: boolean;
   referral_code: string | null;
-  click_id?: string;
-  token?: string;
   confidence?: number;
-  match_method?: string;
-  error?: string;
-}
-interface ClaimApiResponse {
-  success: boolean;
-  reward?: { type: string; amount: number };
+  token?: string;
   error?: string;
 }
 
@@ -51,26 +54,19 @@ interface LogEntry {
   response: unknown;
 }
 
-interface Outcome {
+interface Recovered {
+  code: string;
   method: string;
   confidence: number | null;
-  success: boolean;
-  reward?: { type: string; amount: number };
-  error?: string;
+  token: string | null;
 }
 
-const STAGES: { key: Stage; label: string }[] = [
-  { key: 'landing', label: 'Referral link' },
-  { key: 'store', label: 'App store' },
-  { key: 'opening', label: 'App opens' },
-  { key: 'result', label: 'Recovered' },
-];
-
 function genCode(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let s = '';
-  for (let i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return `DEMO-${s}`;
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let prefix = '';
+  for (let i = 0; i < 3; i++) prefix += letters[Math.floor(Math.random() * letters.length)];
+  const digits = String(Math.floor(1000 + Math.random() * 9000));
+  return `${prefix}${digits}`;
 }
 
 async function post<T>(path: string, body: unknown): Promise<{ status: number; data: T }> {
@@ -84,136 +80,200 @@ async function post<T>(path: string, body: unknown): Promise<{ status: number; d
 }
 
 export function DemoPage() {
+  const path = window.location.pathname;
+  const referralMatch = /^\/demo\/referral\/([^/]+)$/.exec(path);
+  if (referralMatch) return <DemoLanding code={decodeURIComponent(referralMatch[1])} />;
+  if (path === '/demo/app') return <DemoApp />;
+  return <DemoSetup />;
+}
+
+function DemoSetup() {
+  const [code, setCode] = useState(genCode);
+  const valid = CODE_PATTERN.test(code);
+  const link = `${window.location.origin}/demo/referral/${code}`;
+
+  return (
+    <div className="demo-root">
+      <style>{CSS}</style>
+      <a className="demo-back" href="/">
+        ← back to the landing page
+      </a>
+      <h1>Try the real recovery flow</h1>
+      <p className="demo-intro">
+        This isn't a simulation of the real flow — it <em>is</em> the real flow.
+        <code>/demo/referral/&lt;code&gt;</code> renders the actual production{' '}
+        <code>&lt;ReferralLanding&gt;</code> component: real countdown, real click
+        registration, real clipboard handoff. The only thing pointed somewhere
+        different is the store redirect — blynk-deferlink hasn't published a real
+        Play Store/App Store listing yet, so it lands you on this demo's own "app
+        opened" screen instead, which recovers the code exactly how a real installed
+        app would.
+      </p>
+      <p className="demo-note">
+        To see the iOS-specific clipboard path, switch your browser to mobile device
+        emulation (Chrome DevTools' device toolbar, for instance) or open the link on
+        a real phone — platform is detected from the browser's real user agent, the
+        same as it would be for any real visitor. There's no toggle here on purpose.
+      </p>
+
+      <section className="demo-stage">
+        <label htmlFor="code-input">Referral code (letters, then exactly 4 digits)</label>
+        <input
+          id="code-input"
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          placeholder="REF1234"
+        />
+        {!valid && (
+          <p className="demo-error">
+            Needs at least one letter followed by exactly 4 digits — e.g. <code>REF1234</code>.
+          </p>
+        )}
+
+        {valid && (
+          <>
+            <p className="demo-method-note">Your referral link — click it like a recipient would:</p>
+            <a className="demo-link" href={link}>
+              {link}
+            </a>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function DemoLanding({ code }: { code: string }) {
+  const origin = window.location.origin;
+  const config = useMemo(
+    () => ({
+      apiEndpoint: API_BASE,
+      appScheme: 'myapp',
+      // Required by ReferralConfig but ignored whenever *StoreUrl is set
+      // (which it always is here) — never actually consulted.
+      androidPackage: 'unused',
+      iosAppId: 'unused',
+      // No real store listing yet — see the top-of-file comment. Swap these
+      // for the real URLs once one exists; ReferralLanding itself doesn't
+      // change at all.
+      androidStoreUrl: `${origin}/demo/app`,
+      iosStoreUrl: `${origin}/demo/app`,
+    }),
+    [origin],
+  );
+
+  return (
+    <ReferralProvider config={config}>
+      <ReferralLanding
+        referralCode={code}
+        referrerName="Ada"
+        title="You've been invited"
+        subtitle="Sign up and get ₦500 bonus"
+        ctaText="Download the app"
+        onRedirect={(p) => console.log('demo redirect →', p)}
+      />
+    </ReferralProvider>
+  );
+}
+
+function DemoApp() {
   const { collect } = useFingerprint();
-  const [platform, setPlatform] = useState<Platform>('android');
-  const [stage, setStage] = useState<Stage>('landing');
-  const [code] = useState(genCode);
-  const [clickToken, setClickToken] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [installing, setInstalling] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [logOpen, setLogOpen] = useState(false);
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [pasted, setPasted] = useState('');
-  const [pasteError, setPasteError] = useState<string | null>(null);
-  const [fallback, setFallback] = useState<{ busy: boolean; outcome: Outcome | null }>({
-    busy: false,
-    outcome: null,
-  });
-  const openingStarted = useRef(false);
-
+  const [recovered, setRecovered] = useState<Recovered | null>(null);
+  const [checked, setChecked] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [reward, setReward] = useState<string | null>(null);
+  const [claimError, setClaimError] = useState<string | null>(null);
   const nextLogId = useRef(0);
+  const androidChecked = useRef(false);
+  // One stable device_id for this whole "app session" — the fingerprint
+  // path's /match locks the click to whatever device_id that call used, and
+  // /claim verifies the *same* device_id against that lock (see
+  // docs/decisions.md #21/#22). A fresh crypto.randomUUID() per call here
+  // would mismatch its own earlier match and always fail claim with
+  // unverified_claim — found by actually running the fingerprint path
+  // end-to-end, not by inspection.
+  const [deviceId] = useState(() => crypto.randomUUID());
+
   const pushLog = useCallback(
     (entry: Omit<LogEntry, 'id'>) => setLog((l) => [...l, { ...entry, id: nextLogId.current++ }]),
     [],
   );
 
-  const tapLink = useCallback(async () => {
-    setBusy('click');
-    const body = { referral_code: code, fingerprint: collect() };
-    try {
-      const { status, data } = await post<ClickApiResponse>('/referral/click', body);
-      pushLog({ label: 'POST /referral/click', status, request: body, response: data });
-      if (data.success && data.token) {
-        setClickToken(data.token);
-        // iOS only, and called synchronously from *this* click handler,
-        // mirroring the SDK's own redirectToStore — writeClipboardReferral
-        // needs a real user gesture underneath it (Safari rejects a
-        // gesture-less navigator.clipboard.writeText(); see
-        // docs/decisions.md #15/#18). One await here is fine — matches
-        // production, which also awaits click registration first — but it
-        // can't be deferred into a useEffect/setTimeout after this handler
-        // returns, or the gesture is gone and the write silently no-ops.
-        if (platform === 'ios') {
-          await writeClipboardReferral(code, data.token);
-          pushLog({
-            label: 'writeClipboardReferral()',
-            status: 0,
-            request: { code, token: data.token },
-            response: { note: 'written to your system clipboard — best-effort, no return value' },
-          });
-        }
-        setStage('store');
-      }
-    } catch (err) {
-      pushLog({ label: 'POST /referral/click', status: 0, request: body, response: { error: String(err) } });
-    } finally {
-      setBusy(null);
-    }
-  }, [code, collect, platform, pushLog]);
-
-  const installFromStore = useCallback(() => {
-    setInstalling(true);
-    setTimeout(() => {
-      setInstalling(false);
-      setStage('opening');
-    }, 900);
-  }, []);
-
-  const finish = useCallback((method: string, confidence: number | null, data: ClaimApiResponse) => {
-    setOutcome({ method, confidence, success: data.success, reward: data.reward, error: data.error });
-    setStage('result');
-  }, []);
-
-  const recoverAndroid = useCallback(async () => {
-    if (!clickToken) return;
-    setBusy('android');
-    const body = {
-      device_id: crypto.randomUUID(),
-      platform: 'android' as const,
-      token: clickToken,
-      method: 'install_referrer' as const,
-    };
-    try {
-      const { status, data } = await post<ClaimApiResponse>('/referral/claim', body);
-      pushLog({ label: 'POST /referral/claim — Android, deterministic', status, request: body, response: data });
-      finish('install_referrer', data.success ? 100 : null, data);
-    } finally {
-      setBusy(null);
-    }
-  }, [clickToken, pushLog, finish]);
-
-  const submitPaste = useCallback(async () => {
-    if (!pasted.startsWith(CLIPBOARD_PREFIX)) {
-      setPasteError(`Doesn't look like a referral payload — expected it to start with "${CLIPBOARD_PREFIX}".`);
-      return;
-    }
-    const [, , token] = pasted.slice(CLIPBOARD_PREFIX.length).split(':');
-    if (!token) {
-      setPasteError('No token in the pasted payload — clipboard write may have raced the click registration.');
-      return;
-    }
-    setPasteError(null);
-    setBusy('ios');
-    const body = { device_id: crypto.randomUUID(), platform: 'ios' as const, token, method: 'clipboard' as const };
-    try {
-      const { status, data } = await post<ClaimApiResponse>('/referral/claim', body);
-      pushLog({ label: 'POST /referral/claim — iOS, deterministic via clipboard', status, request: body, response: data });
-      finish('clipboard', data.success ? 100 : null, data);
-    } finally {
-      setBusy(null);
-    }
-  }, [pasted, pushLog, finish]);
-
-  // Android recovers the moment the "app opens" — a plain network call, no
-  // gesture requirement, so a useEffect is fine here (guarded against React
-  // 18's double-invoke in dev, since this is a real request). iOS's
-  // clipboard write already happened back in tapLink(), synchronously with
-  // the click that "left" the landing page — it can't happen here instead;
-  // see the comment there.
+  // Android: the referrer param is already sitting in the URL the moment
+  // this page loads — no gesture, no clipboard, fully automatic, exactly
+  // like the real Play Install Referrer.
   useEffect(() => {
-    if (stage !== 'opening' || platform !== 'android' || openingStarted.current) return;
-    openingStarted.current = true;
-    recoverAndroid();
-  }, [stage, platform, recoverAndroid]);
+    if (androidChecked.current) return;
+    androidChecked.current = true;
+    const referrer = new URLSearchParams(window.location.search).get('referrer');
+    if (!referrer) return;
+    const parsed = new URLSearchParams(referrer);
+    const code = parsed.get('code');
+    const token = parsed.get('token');
+    if (!code) return;
+    setRecovered({ code, method: 'install_referrer', confidence: 100, token });
+    pushLog({
+      label: 'Play Install Referrer',
+      status: 0,
+      request: { referrer },
+      response: { code, token: token ? '(present)' : null },
+    });
+    setChecked(true);
+  }, [pushLog]);
 
-  const tryFallback = useCallback(async () => {
-    setFallback({ busy: true, outcome: null });
-    const deviceId = crypto.randomUUID();
+  // iOS (and anyone else who lands here with no referrer param): checking
+  // the clipboard needs a real tap, same as UIPasteControl needing a real
+  // tap on a real device — a background check can't do this.
+  const openApp = useCallback(async () => {
+    setChecking(true);
+    let clipboardText: string | null = null;
+    try {
+      clipboardText = (await navigator.clipboard?.readText?.()) ?? null;
+    } catch (err) {
+      pushLog({
+        label: 'navigator.clipboard.readText()',
+        status: 0,
+        request: {},
+        response: { error: String(err), note: 'denied, unsupported, or nothing to read' },
+      });
+    }
+
+    if (clipboardText?.startsWith(CLIPBOARD_PREFIX)) {
+      const [, , token] = clipboardText.slice(CLIPBOARD_PREFIX.length).split(':');
+      pushLog({
+        label: 'Clipboard read',
+        status: 0,
+        request: {},
+        response: { payload: clipboardText, token: token ? '(present)' : null },
+      });
+      if (token) {
+        // Mirrors ReferralService.applyClipboardCode(): a payload with no
+        // token is treated as no code at all, since it could never clear
+        // /claim anyway — straight to fingerprint matching instead.
+        setRecovered({ code: clipboardText.split(':')[2], method: 'clipboard', confidence: null, token });
+        setChecking(false);
+        setChecked(true);
+        return;
+      }
+    } else if (clipboardText) {
+      pushLog({
+        label: 'Clipboard read',
+        status: 0,
+        request: {},
+        response: { payload: clipboardText, note: 'not a deferlink_ref:v1: payload — ignored' },
+      });
+    }
+
+    // Nothing usable on the clipboard — fall back to a real fingerprint
+    // match, same as a real app would. Same deviceId the whole component
+    // uses, since /claim below must match whatever /match locked the click
+    // to.
     const fp = collect();
     const matchBody = {
       device_id: deviceId,
-      platform,
+      platform: 'ios' as const,
       fingerprint: {
         user_agent: fp.user_agent,
         screen_width: fp.screen_width,
@@ -223,161 +283,79 @@ export function DemoPage() {
       },
     };
     const { status, data } = await post<MatchApiResponse>('/referral/match', matchBody);
-    pushLog({ label: 'POST /referral/match — fallback scenario, no token', status, request: matchBody, response: data });
-    if (!data.matched || !data.token) {
-      setFallback({ busy: false, outcome: { method: 'fingerprint', confidence: data.confidence ?? null, success: false, error: 'no_match' } });
+    pushLog({ label: 'POST /referral/match — fingerprint fallback', status, request: matchBody, response: data });
+    if (data.matched && data.referral_code && data.token) {
+      setRecovered({ code: data.referral_code, method: 'fingerprint', confidence: data.confidence ?? null, token: data.token });
+    } else {
+      setRecovered(null);
+    }
+    setChecking(false);
+    setChecked(true);
+  }, [collect, pushLog, deviceId]);
+
+  const doClaim = useCallback(async () => {
+    if (!recovered?.token) {
+      setClaimError('no_token — a code recovered without a valid token can never clear /claim.');
       return;
     }
-    const claimBody = { device_id: deviceId, platform, token: data.token, method: 'fingerprint' as const };
-    const { status: claimStatus, data: claimData } = await post<ClaimApiResponse>('/referral/claim', claimBody);
-    pushLog({ label: 'POST /referral/claim — fallback fingerprint match', status: claimStatus, request: claimBody, response: claimData });
-    setFallback({
-      busy: false,
-      outcome: { method: 'fingerprint', confidence: data.confidence ?? null, success: claimData.success, reward: claimData.reward, error: claimData.error },
-    });
-  }, [collect, pushLog, platform]);
+    const body = {
+      device_id: deviceId,
+      platform: recovered.method === 'install_referrer' ? ('android' as const) : ('ios' as const),
+      token: recovered.token,
+      method: recovered.method,
+    };
+    const { status, data } = await post<ClaimApiResponse>('/referral/claim', body);
+    pushLog({ label: 'POST /referral/claim', status, request: body, response: data });
+    if (data.success) setReward(JSON.stringify(data.reward));
+    else setClaimError(data.error ?? 'unknown error');
+  }, [recovered, pushLog, deviceId]);
 
-  const restart = () => window.location.reload();
-
-  const stageIndex = STAGES.findIndex((s) => s.key === stage);
+  const isAndroidFlow = new URLSearchParams(window.location.search).has('referrer');
 
   return (
     <div className="demo-root">
       <style>{CSS}</style>
-      <a className="demo-back" href="/">
-        ← back to the landing page
-      </a>
-      <h1>Live recovery demo</h1>
-      <p className="demo-intro">
-        This walks the real flow a referred user goes through: tap a link, land on the store,
-        install, open the app, get matched back to the referrer. The link/store/install screens
-        below are staged for this demo (there's no real app to install here) — but every
-        click/match/claim call underneath hits the real deployed backend, unmocked.
-      </p>
+      <h1>App opened</h1>
+      <p className="demo-intro">This screen stands in for a real installed app's first launch.</p>
 
-      <ol className="demo-steps">
-        {STAGES.map((s, i) => {
-          let status = '';
-          if (i === stageIndex) status = 'active';
-          else if (i < stageIndex) status = 'done';
-          return (
-            <li key={s.key} className={status}>
-              {s.label}
-            </li>
-          );
-        })}
-      </ol>
-
-      {stage === 'landing' && (
-        <section className="demo-stage demo-landing">
-          <div className="demo-platform-toggle">
-            <button className={platform === 'android' ? 'toggle-on' : ''} onClick={() => setPlatform('android')}>
-              Android
-            </button>
-            <button className={platform === 'ios' ? 'toggle-on' : ''} onClick={() => setPlatform('ios')}>
-              iOS
-            </button>
-          </div>
-          <div className="link-card">
-            <p className="link-from">📲 A friend sent you an invite</p>
-            <p className="link-code">
-              Referral code: <code>{code}</code>
-            </p>
-            <button disabled={busy === 'click'} onClick={tapLink}>
-              {busy === 'click' ? 'Opening link…' : 'Tap the invite link'}
-            </button>
-          </div>
-        </section>
-      )}
-
-      {stage === 'store' && (
-        <section className="demo-stage demo-store">
-          <div className="store-card">
-            <div className="store-icon">BD</div>
-            <div className="store-meta">
-              <p className="store-name">Blynk Deferlink Demo</p>
-              <p className="store-sub">
-                {platform === 'android' ? 'Google Play' : 'App Store'} · ★★★★☆ · Free
-              </p>
-            </div>
-            <button disabled={installing} onClick={installFromStore}>
-              {installing ? 'Installing…' : 'Install'}
-            </button>
-          </div>
-          <p className="demo-method-note">
-            The link carried your referral through to here — real deferred deep linking has to
-            survive exactly this hop, since the store app has no idea a referral code exists.
-          </p>
-        </section>
-      )}
-
-      {stage === 'opening' && (
-        <section className="demo-stage demo-opening">
-          <p className="opening-splash">Opening app…</p>
-          {platform === 'android' && <p className="demo-method-note">Checking the Play Install Referrer — deterministic, no round trip needed to find it.</p>}
-          {platform === 'ios' && (
-            <div className="demo-paste">
+      <section className="demo-stage">
+        {isAndroidFlow || checked ? (
+          recovered ? (
+            <>
               <p className="demo-method-note">
-                Back when you tapped the invite link, this page wrote the token to your real
-                clipboard — the same production function the SDK uses, timed to that click so a
-                real browser actually allows it. Your app would read this automatically on a real
-                device; browsers require an explicit paste, so do that here to see the exact wire
-                payload.
+                Recovered <code>{recovered.code}</code> via <code>{recovered.method}</code>
+                {recovered.confidence != null && <> (confidence {recovered.confidence})</>}
+                {!recovered.token && ' — no token, so this can never clear /claim (matches production).'}
               </p>
-              <label htmlFor="paste-input">Paste (⌘V / Ctrl+V):</label>
-              <input
-                id="paste-input"
-                type="text"
-                value={pasted}
-                onChange={(e) => setPasted(e.target.value)}
-                placeholder="deferlink_ref:v1:…"
-              />
-              <button disabled={busy === 'ios' || !pasted} onClick={submitPaste}>
-                Submit paste
-              </button>
-              {pasteError && <p className="demo-error">{pasteError}</p>}
-            </div>
-          )}
-        </section>
-      )}
-
-      {stage === 'result' && outcome && (
-        <section className="demo-stage demo-result">
-          <p>
-            method: <code>{outcome.method}</code>
-            {outcome.confidence !== null && (
-              <>
-                {' · '}confidence: <code>{outcome.confidence}</code>
-              </>
-            )}
-          </p>
-          {outcome.success ? (
-            <p>
-              ✓ matched back to the referrer — reward: <code>{JSON.stringify(outcome.reward)}</code>
-            </p>
+              {reward ? (
+                <p className="demo-method-note">✓ Claimed — reward: {reward}</p>
+              ) : (
+                <button onClick={doClaim} disabled={!recovered.token}>
+                  Continue as new user
+                </button>
+              )}
+              {claimError && <p className="demo-error">{claimError}</p>}
+            </>
           ) : (
-            <p>✗ not matched — {outcome.error}</p>
-          )}
+            <p className="demo-method-note">No code recovered — fingerprint match found nothing.</p>
+          )
+        ) : (
+          <>
+            <p className="demo-method-note">
+              Tap below the same way you'd open a freshly installed app — this checks the real
+              clipboard first (requires the tap, same as a real paste control), falling back to a
+              real fingerprint match if nothing valid is there.
+            </p>
+            <button onClick={openApp} disabled={checking}>
+              {checking ? 'Opening…' : 'Open app'}
+            </button>
+          </>
+        )}
+      </section>
 
-          <div className="demo-fallback">
-            {fallback.outcome ? (
-              <p className="demo-method-note">
-                Without a token: {fallback.outcome.success ? '✓ still matched' : '✗ not matched'} via{' '}
-                <code>fingerprint</code>
-                {fallback.outcome.confidence !== null && <> (confidence {fallback.outcome.confidence})</>} — this
-                simulates click and app-open from the same browser, so the score may look more
-                confident than a real cross-app match would.
-              </p>
-            ) : (
-              <button className="demo-secondary" disabled={fallback.busy} onClick={tryFallback}>
-                {fallback.busy ? 'Trying…' : 'What if the token never arrived? Try the fallback →'}
-              </button>
-            )}
-          </div>
-
-          <button onClick={restart}>Start over</button>
-        </section>
-      )}
+      <a className="demo-back" href="/demo">
+        ← restart with a new code
+      </a>
 
       <details className="demo-log-details" open={logOpen} onToggle={(e) => setLogOpen((e.target as HTMLDetailsElement).open)}>
         <summary>Under the hood — raw requests ({log.length})</summary>
@@ -402,65 +380,42 @@ const CSS = `
   color: #111827;
   line-height: 1.5;
 }
-.demo-back { color: #4338ca; text-decoration: none; font-size: 0.9rem; }
+.demo-back { color: #4338ca; text-decoration: none; font-size: 0.9rem; display: inline-block; margin-top: 12px; }
 .demo-back:hover { text-decoration: underline; }
 h1 { margin: 12px 0 4px; }
-.demo-intro { color: #4b5563; margin-bottom: 20px; }
-.demo-steps {
-  display: flex;
-  list-style: none;
-  padding: 0;
-  margin: 0 0 24px;
-  gap: 4px;
-  font-size: 0.8rem;
-  color: #9ca3af;
-}
-.demo-steps li {
-  flex: 1;
-  text-align: center;
-  padding-bottom: 8px;
-  border-bottom: 3px solid #e5e7eb;
-}
-.demo-steps li.active { color: #111827; font-weight: 600; border-color: #111827; }
-.demo-steps li.done { color: #4b5563; border-color: #9ca3af; }
+.demo-intro { color: #4b5563; margin-bottom: 12px; }
+.demo-note { color: #6b7280; font-size: 0.85rem; margin-bottom: 20px; }
 .demo-stage {
   border: 1px solid #d1d5db;
   border-radius: 8px;
   padding: 20px;
   margin-bottom: 20px;
 }
-.demo-platform-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
-.demo-platform-toggle button {
-  background: #fff;
-  color: #111827;
+.demo-stage label { display: block; font-size: 0.85rem; color: #4b5563; margin-bottom: 6px; }
+.demo-stage input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font-family: monospace;
+  font-size: 1rem;
   border: 1px solid #d1d5db;
-  font-weight: 500;
+  border-radius: 6px;
 }
-.demo-platform-toggle button.toggle-on { background: #111827; color: #fff; border-color: #111827; }
-.link-card { text-align: center; }
-.link-from { font-size: 1.05rem; margin-bottom: 4px; }
-.link-code { color: #4b5563; margin-bottom: 16px; }
-.store-card { display: flex; align-items: center; gap: 14px; }
-.store-icon {
-  width: 56px; height: 56px; border-radius: 12px; flex-shrink: 0;
-  background: linear-gradient(135deg, #6366f1, #4338ca);
-  color: #fff; display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 1.1rem;
-}
-.store-meta { flex: 1; }
-.store-name { font-weight: 600; margin: 0; }
-.store-sub { color: #6b7280; font-size: 0.85rem; margin: 2px 0 0; }
-.demo-opening { text-align: center; }
-.opening-splash { font-size: 1.1rem; font-weight: 600; margin-bottom: 8px; }
 .demo-method-note { color: #6b7280; font-size: 0.85rem; margin: 6px 0 0; }
-.demo-paste { display: flex; flex-direction: column; gap: 6px; align-items: center; margin-top: 12px; }
-.demo-paste input { width: 100%; box-sizing: border-box; padding: 6px 8px; font-family: monospace; }
 .demo-error { color: #b91c1c; font-size: 0.85rem; margin: 4px 0 0; }
-.demo-result p { margin: 6px 0; }
-.demo-fallback { margin: 14px 0; }
-.demo-secondary {
-  background: #fff; color: #4338ca; border: 1px solid #c7d2fe; font-weight: 500;
+.demo-link {
+  display: block;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: #f3f4f6;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: #4338ca;
+  word-break: break-all;
+  text-decoration: none;
 }
+.demo-link:hover { text-decoration: underline; }
 button {
   padding: 8px 14px;
   border: 1px solid #111827;
@@ -469,6 +424,7 @@ button {
   color: #fff;
   font-weight: 600;
   cursor: pointer;
+  margin-top: 8px;
 }
 button:disabled { opacity: 0.4; cursor: default; }
 code { font-family: monospace; background: #f3f4f6; padding: 1px 5px; border-radius: 4px; }

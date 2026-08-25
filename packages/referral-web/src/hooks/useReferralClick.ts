@@ -43,7 +43,20 @@ export function useReferralClick(referralCode: string): UseReferralClickResult {
     sent.current = true;
     setLoading(true);
 
-    const controller = new AbortController();
+    // Deliberately no AbortController here — found by actually running this
+    // in <React.StrictMode> (examples/web's own dev setup, and React's own
+    // recommended way to catch exactly this class of bug): StrictMode
+    // double-invokes every effect in development (mount → cleanup → mount),
+    // and aborting the in-flight fetch on that synthetic first cleanup
+    // killed the *real* click registration outright — the `sent` guard
+    // above then blocked the second invocation from ever retrying, so no
+    // click was ever registered at all, silently (waitForClick() never
+    // rejects). Ignoring a stale result via `cancelled` instead of aborting
+    // the request is React's own documented fix for this pattern, and
+    // matches what the mobile SDK's useReferralCode already does — the
+    // underlying request is left to complete in the background regardless
+    // of which invocation's cleanup fired first.
+    let cancelled = false;
 
     let resolvePromise!: (token: string | null) => void;
     tokenPromiseRef.current = new Promise<string | null>((resolve) => {
@@ -60,26 +73,30 @@ export function useReferralClick(referralCode: string): UseReferralClickResult {
             referral_code: referralCode,
             fingerprint: collect(),
           }),
-          signal: controller.signal,
         });
         const data: ClickResponse = await res.json();
+        // token must survive regardless of `cancelled` — it feeds the
+        // waitForClick() promise, which callers depend on independent of
+        // this component's React state (see the comment on
+        // UseReferralClickResult.waitForClick). Only the setClickId/setError
+        // state updates below need to be suppressed for a stale invocation.
         if (data.success && data.click_id) {
-          setClickId(data.click_id);
           token = data.token ?? null;
-        } else if (data.error) {
+          if (!cancelled) setClickId(data.click_id);
+        } else if (data.error && !cancelled) {
           setError(new Error(data.error));
         }
       } catch (err) {
-        if ((err as Error).name !== 'AbortError') {
-          setError(err as Error);
-        }
+        if (!cancelled) setError(err as Error);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
         resolvePromise(token);
       }
     })();
 
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+    };
     // Intentionally keyed only on the code — one registration per code.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [referralCode]);
