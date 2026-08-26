@@ -136,9 +136,12 @@ design.
 ## Quick start — run the demo
 
 **Don't want to clone anything yet?** [Try the recovery flow live](https://referral-web-demo.vercel.app/demo)
-— registers a real click against the live backend, then walks through all
-three recovery methods (Android install-referrer, iOS clipboard,
-fingerprint-only fallback) with the actual request/response for each.
+— pick a referral code and it builds a real link to the actual production
+landing page (real countdown, real click registration, real clipboard
+handoff), then recovers it exactly how a real installed app would (Android:
+automatic via the Play referrer param; iOS: a real clipboard check, falling
+back to a real fingerprint match), with the actual request/response for
+every step.
 
 Otherwise, the fastest way to see the whole thing work locally, before
 installing anything for real. Three terminals. No PHP or database required
@@ -160,9 +163,12 @@ Open the web page with `?code=1234` and watch the backend log the click. On
 desktop it shows both store buttons; on a phone browser it attempts the app
 handoff then redirects to the store.
 
-In the mobile app, walk the three buttons — simulate the link tap, recover the
-code, claim — and watch the on-screen log and the backend console mirror each
-other.
+The mobile app recovers automatically on launch, same as a real app —
+there's nothing to simulate inside it. To see it actually find something,
+type a code into its own "Generate a referral link" card and tap **Open
+link** — that opens the real landing page in your device/simulator's
+browser (real countdown, real click registration, real clipboard handoff),
+then switch back to the app to see the recovery.
 
 ### Mobile notes
 
@@ -180,6 +186,18 @@ other.
   previously referenced a package called `react-native-android-install-referrer`,
   which turned out to not exist on npm at all — see
   [packages/referral-mobile/README.md](packages/referral-mobile/README.md).)
+- **Deep-linking straight into the running app (no store, no install) works,
+  but an Expo dev build adds one extra tap.** `<ReferralLanding>` always
+  tries `myapp://referral?code=...` first, before falling through to the
+  countdown/store redirect — confirmed with `xcrun simctl openurl` against a
+  real installed build. On a real production build this routes straight
+  into the app, no dialog. On an **Expo development build** specifically
+  (what `expo run:ios`/`expo run:android` produce), Expo's own dev-client
+  intercepts every custom-scheme link first with a "which dev server should
+  open this?" picker (it supports pointing one binary at several Metro
+  instances) — pick this app's entry there and it proceeds normally.
+  Standard Expo tooling behavior, not something this SDK or example
+  controls.
 
 ---
 

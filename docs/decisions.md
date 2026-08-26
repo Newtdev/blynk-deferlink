@@ -1249,3 +1249,128 @@ checked against Apple's own published definition, not guesswork — but
 Apple's review outcomes aren't fully mechanical and the guidelines can
 shift. Worth a real compliance/legal review before the hosted product
 takes its first paying multi-tenant customer, not just this document.
+
+---
+
+## 26. `useReferralClick`'s AbortController silently killed every click in `<React.StrictMode>` dev — Done
+
+**Problem, found rebuilding the web demo to use the real `<ReferralLanding>`
+component end-to-end instead of a hand-rolled mock, then actually running it
+in a real browser (Playwright) rather than trusting a build.** The redirect
+away from the landing page always carried the referral `code` but never a
+`token` — every deterministic recovery downstream was silently unclaimable,
+in the exact same way a manually-typed code always has been (see #21/#22).
+
+Root cause, confirmed by disabling `<React.StrictMode>` and watching the
+click succeed on the first try: React 18's StrictMode deliberately
+double-invokes every effect in development (mount → cleanup → mount) to
+surface exactly this class of bug. `useReferralClick`'s effect had a `sent`
+ref meant to guarantee the click registers exactly once despite that, but
+its cleanup called `controller.abort()` on the underlying fetch. Sequence:
+first invocation sets `sent.current = true` and starts the real fetch;
+StrictMode's synthetic cleanup fires immediately, aborting that *real*
+request before it could complete; the second invocation's `sent.current`
+guard is already tripped, so nothing ever retries. Net effect: **no click
+ever registered at all**, silently — `waitForClick()` never rejects, so
+`redirectToStore` proceeded anyway, exactly as designed for a slow-but-
+legitimate failure, indistinguishable from this one. This broke the
+README's own "Quick start — run the demo" instructions for anyone running
+`examples/web`'s dev server (which wraps everything in `<React.StrictMode>`)
+— the fastest, most-recommended way to evaluate the SDK locally silently
+never produced a claimable recovery.
+
+**Fix.** Removed the `AbortController` entirely — React's own documented
+guidance for this exact pattern (a network request started in an effect,
+StrictMode's double-invoke) is to let the in-flight request complete and
+ignore a stale result via a plain `cancelled` boolean, not abort the
+request. Matches what `packages/referral-mobile`'s `useReferralCode` already
+does for the same reason. A second bug rode along with the first and needed
+its own fix: the initial rewrite gated the `token` assignment itself behind
+`if (cancelled) return`, not just the `setClickId`/`setError` state updates
+— so even with the abort removed, a `cancelled` invocation's *successful*
+response still resolved `waitForClick()`'s promise with `null`, discarding a
+real token the request had actually received. `token` now survives
+regardless of `cancelled`, since `waitForClick()`'s promise is explicitly
+documented to be independent of this component's React lifecycle; only the
+React state setters are gated.
+
+**Verification.** A real Playwright browser (not `curl`, not a build check)
+driving the actual demo end-to-end against the mock backend, for both
+Android and iOS user agents: link generation → the real `<ReferralLanding>`
+countdown/CTA → real click registration → real redirect carrying a valid
+token → real recovery → real `/claim` → real reward, confirmed via captured
+network traffic at every step, with `<React.StrictMode>` left enabled
+throughout (the actual `examples/web` configuration, not a weakened test
+harness).
+
+---
+
+## 27. Optimistic app-open showed a blocking "Safari cannot open the page" alert to every new user — Done
+
+**Problem, reported directly from a real Safari test — the exact failure
+mode automated browser testing structurally cannot surface.** Every prior
+verification of this PR (Playwright/Chromium, Playwright/WebKit) missed
+this entirely, because neither reproduces native browser alert dialogs the
+way a real, interactive Safari does — a gap worth naming plainly rather
+than treated as "tested" once headless automation passes.
+
+`ReferralLanding`'s "try to open an already-installed app first" effect
+(see #6's design, unrelated to this bug) set `window.location.href` to the
+app's custom URL scheme unconditionally on mount, for every mobile visitor,
+with no gesture behind it. When nothing is registered to handle that
+scheme — true for **every new user**, since a referral link's entire
+purpose is reaching people who don't have the app yet — real Safari
+responds by blocking the top document with a native "Safari cannot open
+the page because the address is invalid" alert, immediately, before the
+visitor ever reads the invite. Not a rare edge case: the majority case,
+for the exact audience this whole product exists to reach.
+
+**Fix.** Scope the attempt to a hidden `<iframe>` instead of the top-level
+document: set the iframe's `src` to the app-scheme URL, append it,
+remove it after a short delay. A failed navigation inside an iframe
+doesn't trigger Safari's blocking top-document alert, while the attempt
+still succeeds at opening the app when one *is* registered for that scheme
+— this is the standard technique deferred-linking implementations use for
+exactly this reason, not a novel workaround.
+
+**Verification, and its limits, stated plainly.** Re-ran the full
+Playwright/Chromium and Playwright/WebKit suites from #26 after this
+change — full click → redirect → recovery → claim still passes on both,
+and no new console errors or page crashes from the iframe itself. Neither
+suite can confirm the actual fix (the dialog they never showed in the
+first place), since neither reproduces native alert-dialog behavior at
+all. **This needs a real-device Safari pass before being trusted further**
+— same discipline #14/#15 already established for anything that only a
+real Safari/real device can actually confirm.
+
+---
+
+## 28. Web demo's `/demo/app` gated the automatic fingerprint fallback behind a manual tap — Done
+
+**Problem, reported directly: a real click existed in the database, but
+nothing showed up on `/demo/app` and pasting found nothing either.** Both
+the clipboard check *and* the fingerprint fallback were wired to the same
+`openApp()` tap handler — if that button was never tapped (a real
+possibility once the countdown auto-redirects, especially since a passive,
+gesture-less redirect is exactly the scenario where the clipboard write
+never lands in the first place, per #15/#18), *neither* path ever ran.
+This contradicts the README's own flow diagram, already correctly
+implemented on the mobile side (`examples/mobile/App.tsx`): iOS's
+fingerprint match is automatic on launch, no gesture required — only the
+clipboard override needs a tap. The web demo's parallel implementation
+reintroduced the same class of bug the mobile app had already been fixed
+for, in a separate file.
+
+**Fix.** Split into two independent things, matching mobile: an effect
+that runs the fingerprint match automatically the moment `/demo/app` loads
+(no referrer param present), and a separate `checkClipboard()` handler,
+always available afterward, that overrides whatever the automatic match
+found if a valid payload turns up — exactly the "overrides an automatic
+match, if tapped" language the README already uses to describe this.
+
+**Verification.** Re-ran the Playwright/Chromium suite from #26 with the
+"tap Open app" step *not* performed at all (the button was renamed to
+"Check clipboard" and is no longer a precondition) — recovery, and the
+subsequent claim, both completed automatically with zero interaction on
+the iOS path, confirming the fallback no longer depends on a tap that may
+never come.
