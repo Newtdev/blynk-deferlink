@@ -1342,3 +1342,35 @@ first place), since neither reproduces native alert-dialog behavior at
 all. **This needs a real-device Safari pass before being trusted further**
 — same discipline #14/#15 already established for anything that only a
 real Safari/real device can actually confirm.
+
+---
+
+## 28. Web demo's `/demo/app` gated the automatic fingerprint fallback behind a manual tap — Done
+
+**Problem, reported directly: a real click existed in the database, but
+nothing showed up on `/demo/app` and pasting found nothing either.** Both
+the clipboard check *and* the fingerprint fallback were wired to the same
+`openApp()` tap handler — if that button was never tapped (a real
+possibility once the countdown auto-redirects, especially since a passive,
+gesture-less redirect is exactly the scenario where the clipboard write
+never lands in the first place, per #15/#18), *neither* path ever ran.
+This contradicts the README's own flow diagram, already correctly
+implemented on the mobile side (`examples/mobile/App.tsx`): iOS's
+fingerprint match is automatic on launch, no gesture required — only the
+clipboard override needs a tap. The web demo's parallel implementation
+reintroduced the same class of bug the mobile app had already been fixed
+for, in a separate file.
+
+**Fix.** Split into two independent things, matching mobile: an effect
+that runs the fingerprint match automatically the moment `/demo/app` loads
+(no referrer param present), and a separate `checkClipboard()` handler,
+always available afterward, that overrides whatever the automatic match
+found if a valid payload turns up — exactly the "overrides an automatic
+match, if tapped" language the README already uses to describe this.
+
+**Verification.** Re-ran the Playwright/Chromium suite from #26 with the
+"tap Open app" step *not* performed at all (the button was renamed to
+"Check clipboard" and is no longer a precondition) — recovery, and the
+subsequent claim, both completed automatically with zero interaction on
+the iOS path, confirming the fallback no longer depends on a tap that may
+never come.

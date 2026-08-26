@@ -182,11 +182,11 @@ function DemoApp() {
   const [logOpen, setLogOpen] = useState(false);
   const [recovered, setRecovered] = useState<Recovered | null>(null);
   const [checked, setChecked] = useState(false);
-  const [checking, setChecking] = useState(false);
+  const [checkingClipboard, setCheckingClipboard] = useState(false);
   const [reward, setReward] = useState<string | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
   const nextLogId = useRef(0);
-  const androidChecked = useRef(false);
+  const recoveryStarted = useRef(false);
   // One stable device_id for this whole "app session" — the fingerprint
   // path's /match locks the click to whatever device_id that call used, and
   // /claim verifies the *same* device_id against that lock (see
@@ -201,33 +201,65 @@ function DemoApp() {
     [],
   );
 
-  // Android: the referrer param is already sitting in the URL the moment
-  // this page loads — no gesture, no clipboard, fully automatic, exactly
-  // like the real Play Install Referrer.
+  // Recovery runs automatically the moment this page loads, for *both*
+  // platforms — no gesture required, matching the README's own flow
+  // diagram (Android reads the Install Referrer; iOS falls straight to an
+  // automatic fingerprint match) and what the mobile app already does
+  // correctly. The clipboard check below is a separate, tap-triggered
+  // override on top of this, not a precondition for the fallback to run —
+  // gating fingerprint matching behind a manual tap here (as an earlier
+  // version of this file did) left the demo silently stuck showing nothing
+  // whenever that tap didn't happen, which isn't how iOS actually behaves.
   useEffect(() => {
-    if (androidChecked.current) return;
-    androidChecked.current = true;
-    const referrer = new URLSearchParams(window.location.search).get('referrer');
-    if (!referrer) return;
-    const parsed = new URLSearchParams(referrer);
-    const code = parsed.get('code');
-    const token = parsed.get('token');
-    if (!code) return;
-    setRecovered({ code, method: 'install_referrer', confidence: 100, token });
-    pushLog({
-      label: 'Play Install Referrer',
-      status: 0,
-      request: { referrer },
-      response: { code, token: token ? '(present)' : null },
-    });
-    setChecked(true);
-  }, [pushLog]);
+    if (recoveryStarted.current) return;
+    recoveryStarted.current = true;
 
-  // iOS (and anyone else who lands here with no referrer param): checking
-  // the clipboard needs a real tap, same as UIPasteControl needing a real
-  // tap on a real device — a background check can't do this.
-  const openApp = useCallback(async () => {
-    setChecking(true);
+    const referrer = new URLSearchParams(window.location.search).get('referrer');
+    if (referrer) {
+      const parsed = new URLSearchParams(referrer);
+      const code = parsed.get('code');
+      const token = parsed.get('token');
+      if (code) {
+        setRecovered({ code, method: 'install_referrer', confidence: 100, token });
+        pushLog({
+          label: 'Play Install Referrer',
+          status: 0,
+          request: { referrer },
+          response: { code, token: token ? '(present)' : null },
+        });
+      }
+      setChecked(true);
+      return;
+    }
+
+    (async () => {
+      const fp = collect();
+      const matchBody = {
+        device_id: deviceId,
+        platform: 'ios' as const,
+        fingerprint: {
+          user_agent: fp.user_agent,
+          screen_width: fp.screen_width,
+          screen_height: fp.screen_height,
+          timezone: fp.timezone,
+          language: fp.language,
+        },
+      };
+      const { status, data } = await post<MatchApiResponse>('/referral/match', matchBody);
+      pushLog({ label: 'POST /referral/match — automatic fingerprint match', status, request: matchBody, response: data });
+      if (data.matched && data.referral_code && data.token) {
+        setRecovered({ code: data.referral_code, method: 'fingerprint', confidence: data.confidence ?? null, token: data.token });
+      }
+      setChecked(true);
+    })();
+  }, [pushLog, collect, deviceId]);
+
+  // Optional override, tap-triggered — checking the clipboard needs a real
+  // gesture, same as a real UIPasteControl does on-device. Overrides
+  // whatever the automatic match above found, exactly like the README
+  // documents ("overrides an automatic match, if tapped").
+  const checkClipboard = useCallback(async () => {
+    setCheckingClipboard(true);
     let clipboardText: string | null = null;
     try {
       clipboardText = (await navigator.clipboard?.readText?.()) ?? null;
@@ -251,11 +283,9 @@ function DemoApp() {
       if (token) {
         // Mirrors ReferralService.applyClipboardCode(): a payload with no
         // token is treated as no code at all, since it could never clear
-        // /claim anyway — straight to fingerprint matching instead.
+        // /claim anyway — leaves whatever the automatic match found (if
+        // anything) standing instead.
         setRecovered({ code: clipboardText.split(':')[2], method: 'clipboard', confidence: null, token });
-        setChecking(false);
-        setChecked(true);
-        return;
       }
     } else if (clipboardText) {
       pushLog({
@@ -265,33 +295,8 @@ function DemoApp() {
         response: { payload: clipboardText, note: 'not a deferlink_ref:v1: payload — ignored' },
       });
     }
-
-    // Nothing usable on the clipboard — fall back to a real fingerprint
-    // match, same as a real app would. Same deviceId the whole component
-    // uses, since /claim below must match whatever /match locked the click
-    // to.
-    const fp = collect();
-    const matchBody = {
-      device_id: deviceId,
-      platform: 'ios' as const,
-      fingerprint: {
-        user_agent: fp.user_agent,
-        screen_width: fp.screen_width,
-        screen_height: fp.screen_height,
-        timezone: fp.timezone,
-        language: fp.language,
-      },
-    };
-    const { status, data } = await post<MatchApiResponse>('/referral/match', matchBody);
-    pushLog({ label: 'POST /referral/match — fingerprint fallback', status, request: matchBody, response: data });
-    if (data.matched && data.referral_code && data.token) {
-      setRecovered({ code: data.referral_code, method: 'fingerprint', confidence: data.confidence ?? null, token: data.token });
-    } else {
-      setRecovered(null);
-    }
-    setChecking(false);
-    setChecked(true);
-  }, [collect, pushLog, deviceId]);
+    setCheckingClipboard(false);
+  }, [pushLog]);
 
   const doClaim = useCallback(async () => {
     if (!recovered?.token) {
@@ -319,36 +324,41 @@ function DemoApp() {
       <p className="demo-intro">This screen stands in for a real installed app's first launch.</p>
 
       <section className="demo-stage">
-        {isAndroidFlow || checked ? (
-          recovered ? (
-            <>
-              <p className="demo-method-note">
-                Recovered <code>{recovered.code}</code> via <code>{recovered.method}</code>
-                {recovered.confidence != null && <> (confidence {recovered.confidence})</>}
-                {!recovered.token && ' — no token, so this can never clear /claim (matches production).'}
-              </p>
-              {reward ? (
-                <p className="demo-method-note">✓ Claimed — reward: {reward}</p>
-              ) : (
-                <button onClick={doClaim} disabled={!recovered.token}>
-                  Continue as new user
-                </button>
-              )}
-              {claimError && <p className="demo-error">{claimError}</p>}
-            </>
-          ) : (
-            <p className="demo-method-note">No code recovered — fingerprint match found nothing.</p>
-          )
-        ) : (
+        {!checked && <p className="demo-method-note">Opening app… running the automatic recovery check.</p>}
+
+        {checked && (
           <>
-            <p className="demo-method-note">
-              Tap below the same way you'd open a freshly installed app — this checks the real
-              clipboard first (requires the tap, same as a real paste control), falling back to a
-              real fingerprint match if nothing valid is there.
-            </p>
-            <button onClick={openApp} disabled={checking}>
-              {checking ? 'Opening…' : 'Open app'}
-            </button>
+            {recovered ? (
+              <>
+                <p className="demo-method-note">
+                  Recovered <code>{recovered.code}</code> via <code>{recovered.method}</code>
+                  {recovered.confidence != null && <> (confidence {recovered.confidence})</>}
+                  {!recovered.token && ' — no token, so this can never clear /claim (matches production).'}
+                </p>
+                {reward ? (
+                  <p className="demo-method-note">✓ Claimed — reward: {reward}</p>
+                ) : (
+                  <button onClick={doClaim} disabled={!recovered.token}>
+                    Continue as new user
+                  </button>
+                )}
+                {claimError && <p className="demo-error">{claimError}</p>}
+              </>
+            ) : (
+              <p className="demo-method-note">No code recovered — automatic fingerprint match found nothing.</p>
+            )}
+
+            {!isAndroidFlow && (
+              <>
+                <p className="demo-method-note" style={{ marginTop: 12 }}>
+                  Or tap to check the clipboard directly — overrides the automatic result above if a
+                  valid payload is found, same as a real app:
+                </p>
+                <button onClick={checkClipboard} disabled={checkingClipboard}>
+                  {checkingClipboard ? 'Checking…' : 'Check clipboard'}
+                </button>
+              </>
+            )}
           </>
         )}
       </section>
