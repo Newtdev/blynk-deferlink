@@ -1413,8 +1413,6 @@ PODS:
     - React-utils (= 0.74.5)
   - ReferralMobilePasteControl (1.0.0):
     - React-Core
-  - RNCAsyncStorage (1.23.1):
-    - React-Core
   - RNDeviceInfo (11.1.0):
     - React-Core
   - SocketRocket (0.7.0)
@@ -1490,8 +1488,7 @@ DEPENDENCIES:
   - React-runtimescheduler (from `../../../node_modules/react-native/ReactCommon/react/renderer/runtimescheduler`)
   - React-utils (from `../../../node_modules/react-native/ReactCommon/react/utils`)
   - ReactCommon/turbomodule/core (from `../../../node_modules/react-native/ReactCommon`)
-  - "ReferralMobilePasteControl (from `../../../node_modules/@sparkle/referral-mobile`)"
-  - "RNCAsyncStorage (from `../../../node_modules/@react-native-async-storage/async-storage`)"
+  - "ReferralMobilePasteControl (from `../../../node_modules/@blynk-deferlink/referral-mobile`)"
   - RNDeviceInfo (from `../../../node_modules/react-native-device-info`)
   - Yoga (from `../../../node_modules/react-native/ReactCommon/yoga`)
 
@@ -1636,9 +1633,7 @@ EXTERNAL SOURCES:
   ReactCommon:
     :path: "../../../node_modules/react-native/ReactCommon"
   ReferralMobilePasteControl:
-    :path: "../../../node_modules/@sparkle/referral-mobile"
-  RNCAsyncStorage:
-    :path: "../../../node_modules/@react-native-async-storage/async-storage"
+    :path: "../../../node_modules/@blynk-deferlink/referral-mobile"
   RNDeviceInfo:
     :path: "../../../node_modules/react-native-device-info"
   Yoga:
@@ -1712,8 +1707,7 @@ SPEC CHECKSUMS:
   React-runtimescheduler: 2cbd0f3625b30bba08e8768776107f6f0203159b
   React-utils: 9fa4e5d0b5e6c6c85c958f19d6ef854337886417
   ReactCommon: 9f285823dbe955099978d9bff65a7653ca029256
-  ReferralMobilePasteControl: ca0a25219cfd195cbbb72fc51b0eb15a33d3746f
-  RNCAsyncStorage: aa75595c1aefa18f868452091fa0c411a516ce11
+  ReferralMobilePasteControl: 28d1095cef98b7b409e5c226a614b27492eef979
   RNDeviceInfo: 900bd20e1fd3bfd894e7384cc4a83880c0341bd3
   SocketRocket: abac6f5de4d4d62d24e11868d7a2f427e0ef940d
   Yoga: 950bbfd7e6f04790fdb51149ed51df41f329fcc8
