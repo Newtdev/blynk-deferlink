@@ -186,6 +186,18 @@ then switch back to the app to see the recovery.
   previously referenced a package called `react-native-android-install-referrer`,
   which turned out to not exist on npm at all — see
   [packages/referral-mobile/README.md](packages/referral-mobile/README.md).)
+- **Deep-linking straight into the running app (no store, no install) works,
+  but an Expo dev build adds one extra tap.** `<ReferralLanding>` always
+  tries `myapp://referral?code=...` first, before falling through to the
+  countdown/store redirect — confirmed with `xcrun simctl openurl` against a
+  real installed build. On a real production build this routes straight
+  into the app, no dialog. On an **Expo development build** specifically
+  (what `expo run:ios`/`expo run:android` produce), Expo's own dev-client
+  intercepts every custom-scheme link first with a "which dev server should
+  open this?" picker (it supports pointing one binary at several Metro
+  instances) — pick this app's entry there and it proceeds normally.
+  Standard Expo tooling behavior, not something this SDK or example
+  controls.
 
 ---
 
