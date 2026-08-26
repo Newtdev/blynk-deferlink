@@ -1302,3 +1302,43 @@ token → real recovery → real `/claim` → real reward, confirmed via capture
 network traffic at every step, with `<React.StrictMode>` left enabled
 throughout (the actual `examples/web` configuration, not a weakened test
 harness).
+
+---
+
+## 27. Optimistic app-open showed a blocking "Safari cannot open the page" alert to every new user — Done
+
+**Problem, reported directly from a real Safari test — the exact failure
+mode automated browser testing structurally cannot surface.** Every prior
+verification of this PR (Playwright/Chromium, Playwright/WebKit) missed
+this entirely, because neither reproduces native browser alert dialogs the
+way a real, interactive Safari does — a gap worth naming plainly rather
+than treated as "tested" once headless automation passes.
+
+`ReferralLanding`'s "try to open an already-installed app first" effect
+(see #6's design, unrelated to this bug) set `window.location.href` to the
+app's custom URL scheme unconditionally on mount, for every mobile visitor,
+with no gesture behind it. When nothing is registered to handle that
+scheme — true for **every new user**, since a referral link's entire
+purpose is reaching people who don't have the app yet — real Safari
+responds by blocking the top document with a native "Safari cannot open
+the page because the address is invalid" alert, immediately, before the
+visitor ever reads the invite. Not a rare edge case: the majority case,
+for the exact audience this whole product exists to reach.
+
+**Fix.** Scope the attempt to a hidden `<iframe>` instead of the top-level
+document: set the iframe's `src` to the app-scheme URL, append it,
+remove it after a short delay. A failed navigation inside an iframe
+doesn't trigger Safari's blocking top-document alert, while the attempt
+still succeeds at opening the app when one *is* registered for that scheme
+— this is the standard technique deferred-linking implementations use for
+exactly this reason, not a novel workaround.
+
+**Verification, and its limits, stated plainly.** Re-ran the full
+Playwright/Chromium and Playwright/WebKit suites from #26 after this
+change — full click → redirect → recovery → claim still passes on both,
+and no new console errors or page crashes from the iframe itself. Neither
+suite can confirm the actual fix (the dialog they never showed in the
+first place), since neither reproduces native alert-dialog behavior at
+all. **This needs a real-device Safari pass before being trusted further**
+— same discipline #14/#15 already established for anything that only a
+real Safari/real device can actually confirm.

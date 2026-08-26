@@ -121,9 +121,34 @@ export function ReferralLanding({
     };
     document.addEventListener('visibilitychange', onHide);
 
-    window.location.href = getAppSchemeUrl(referralCode, config);
+    // A hidden iframe, not window.location.href, on purpose — found by
+    // actually testing in real Safari, not a browser-automation stand-in
+    // (this is invisible to Chromium and to headless WebKit automation,
+    // neither of which reproduces native alert dialogs the same way real
+    // Safari does). Assigning location.href directly to an unregistered
+    // custom scheme makes Safari show a blocking "Safari cannot open the
+    // page because the address is invalid" alert on the *top* document —
+    // for every visitor who doesn't already have the app, which is the
+    // entire target audience of a referral link. Scoping the attempt to an
+    // iframe keeps a failed navigation silent there instead, while still
+    // succeeding at opening the app when one *is* registered for this
+    // scheme — the standard technique deferred-linking products use for
+    // exactly this reason. Needs a real-device re-verification pass before
+    // being trusted further, same discipline as any other real-Safari-only
+    // finding in this codebase (see docs/decisions.md #14, #15).
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = getAppSchemeUrl(referralCode, config);
+    document.body.appendChild(iframe);
+    const removeTimer = setTimeout(() => {
+      iframe.remove();
+    }, 1000);
 
-    return () => document.removeEventListener('visibilitychange', onHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      clearTimeout(removeTimer);
+      iframe.remove();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
