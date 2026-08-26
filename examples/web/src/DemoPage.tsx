@@ -81,7 +81,7 @@ async function post<T>(path: string, body: unknown): Promise<{ status: number; d
 
 export function DemoPage() {
   const path = window.location.pathname;
-  const referralMatch = /^\/demo\/referral\/([^/]+)$/.exec(path);
+  const referralMatch = /^\/demo\/referral\/([^/]+)\/?$/.exec(path);
   if (referralMatch) return <DemoLanding code={decodeURIComponent(referralMatch[1])} />;
   if (path === '/demo/app') return <DemoApp />;
   return <DemoSetup />;
