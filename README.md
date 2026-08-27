@@ -143,6 +143,14 @@ automatic via the Play referrer param; iOS: a real clipboard check, falling
 back to a real fingerprint match), with the actual request/response for
 every step.
 
+**Want the real mobile app, not just the web half?** [Install the Android demo](https://expo.dev/accounts/newtdev/projects/blynk-recovery-demo/builds/547ed52d-afed-4e8e-ab69-fe4d4a42e96e)
+— an EAS internal-distribution build, no Play Store listing needed; open
+that link on an Android device (or scan its QR code) to install it
+directly. iOS doesn't have an equivalent link yet — internal distribution
+there needs a registered Apple Developer account and per-device UDID
+registration, so for now the iOS side is only reachable by building it
+yourself (see below).
+
 Otherwise, the fastest way to see the whole thing work locally, before
 installing anything for real. Three terminals. No PHP or database required
 — the mock backend covers it.
