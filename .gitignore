@@ -20,6 +20,8 @@ android/.gradle/
 android/local.properties
 *.keystore
 !debug.keystore
+*.jks
+examples/mobile/credentials.json
 
 # Env files (secrets). Package-level .gitignore files may keep specific
 # non-secret files like examples/web/.env.production tracked on purpose.
