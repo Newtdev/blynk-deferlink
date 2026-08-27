@@ -17,6 +17,22 @@ examples/
   mobile/             Expo app using @blynk-deferlink/referral-mobile
 ```
 
+## Demo
+
+Both recordings are the real demo (`examples/web` + `examples/mobile`) against
+the real deployed backend — no simulated steps. iOS recovers via clipboard
+fingerprint matching (confidence 100) and stops there — the recording
+environment couldn't synthesize the final tap; Android runs the full loop
+including the claim and reward.
+
+**iOS** — clipboard fingerprint recovery:
+
+<video src="docs/media/demo-ios.mp4" controls width="360"></video>
+
+**Android** — install referrer recovery through claim + reward:
+
+<video src="docs/media/demo-android.mp4" controls width="360"></video>
+
 ## How it works
 
 ```
