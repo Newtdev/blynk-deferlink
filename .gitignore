@@ -41,3 +41,5 @@ android/local.properties
 # Logs
 *.log
 npm-debug.log*
+.vercel
+.env*

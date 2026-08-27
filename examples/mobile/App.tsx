@@ -18,21 +18,27 @@ import {
   type ReferralConfig,
 } from '@blynk-deferlink/referral-mobile';
 
-// Local dev talks to the mock backend (`npm run backend`, see the root
-// README's "Quick start"); on a physical device `localhost` won't reach
-// your machine, so use your computer's LAN IP there instead. A release
-// build (`__DEV__` false — this is what ships to Play Console's Internal
-// Testing track) points at the real deployed backend instead, so a
-// tester installing this from the Play Store sees a genuine recovery,
-// not a dead endpoint. See docs/integration/referral-sdk.md or
-// referral-sdk-node.md for pointing this at your own backend instead.
-const API = __DEV__ ? 'http://localhost:8787/api' : 'https://referral-sdk-node.vercel.app/api';
+// Always the real deployed backend, dev build or not — must match whatever
+// backend WEB_ORIGIN below actually talks to, since the link this app
+// generates always opens the live web demo (never localhost). Pointing this
+// at the local mock backend while the web half hits the real one meant the
+// click and the recovery check landed in two disconnected data stores — the
+// app could never find a click it never registered against, no matter how
+// many times you relaunched. Found by actually running the whole loop with a
+// local dev build, not by inspection. Still want the original fully-local
+// workflow (mock backend + local web dev server + local app, all three
+// talking to each other, matching the README's "Quick start")? Point this
+// and WEB_ORIGIN below at localhost together — they just have to agree.
+// See docs/integration/referral-sdk.md or referral-sdk-node.md for pointing
+// this at your own backend instead of blynk-deferlink's.
+const API = 'https://referral-sdk-node.vercel.app/api';
 
-// Always the real deployed site, never localhost — unlike API above, this
-// URL isn't just fetched from this app, it's meant to be opened in a real
-// browser and handed to Share (another device, another person). A
-// localhost link would be useless the moment it leaves this machine, and
-// broken even on this machine's own physical device. The generated link is
+// Always the real deployed site, never localhost — same policy as API
+// above, and for the same reason they have to agree: this URL isn't just
+// fetched from this app, it's meant to be opened in a real browser and
+// handed to Share (another device, another person). A localhost link would
+// be useless the moment it leaves this machine, and broken even on this
+// machine's own physical device. The generated link is
 // built against this, in the /referral/:code shape the README documents
 // (see docs/decisions.md #3), just under /demo so it lands on the demo's
 // own "app opened" fallback instead of a real store listing (none
