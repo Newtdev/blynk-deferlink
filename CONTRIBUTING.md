@@ -47,7 +47,8 @@ npm --workspace @blynk-deferlink/referral-sdk-node run typecheck
 npm --workspace @blynk-deferlink/referral-mobile run test
 npm --workspace @blynk-deferlink/referral-mobile run typecheck
 
-# Web SDK (no test suite yet — typecheck only)
+# Web SDK
+npm --workspace @blynk-deferlink/referral-web run test
 npm --workspace @blynk-deferlink/referral-web run typecheck
 
 # PHP backend — no PHPUnit runner assumed; both work
