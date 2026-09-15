@@ -1374,3 +1374,67 @@ match, if tapped" language the README already uses to describe this.
 subsequent claim, both completed automatically with zero interaction on
 the iOS path, confirming the fallback no longer depends on a tap that may
 never come.
+
+## 29. PHP recency scoring silently depended on the host app's timezone — Done
+
+**Problem, reported downstream from a real deployment on a non-UTC host, and
+reproduced here before changing anything.** `FingerprintMatcher::recencyScore()` parsed
+`created_at` with `strtotime()`. That resolves a *naive* datetime string in
+the host app's default timezone, but `created_at` is written by MySQL's
+`UTC_TIMESTAMP()` and reads back naive — a `TIMESTAMP` column carries no
+zone designator — while the `$now` it's compared against is a true Unix
+timestamp. The two disagree by exactly the host's UTC offset.
+
+Observed on a UTC+1 host: a two-second-old perfect fingerprint match
+scored **99.69 instead of 100**. The five non-recency weights sum to 85, so
+recency contributed 14.69 of 15 — back-solving to ~3571s elapsed for a click
+made 2 seconds earlier, i.e. one hour of phantom age.
+
+**The 0.31 points are not the real problem — the sign flip is.** On a
+*negative* UTC offset `$elapsed` goes negative and trips the
+`if ($elapsed <= 0) return $weight;` clamp, which exists to forgive clock
+skew. A click at the far edge of its 48-hour window then collects *full*
+freshness credit: a 47-hour-old click scores **86.5625 under
+`America/New_York` against a correct 85.3125**. Recency stops being a decay
+function and starts inflating stale candidates toward the match threshold.
+Because this package installs into someone else's Laravel app, it cannot
+assume `date.timezone` is UTC.
+
+This was an isolated inconsistency, which is what made it survive review:
+both neighbouring datetime parses — `FingerprintMatcher::match()` and
+`ClickStore::findClickForClaim()`, each handling `expires_at` — already pass
+an explicit `UTC` `DateTimeZone`. Line 170 was the lone outlier.
+
+**Fix.** Parse `created_at` through `new \DateTimeImmutable($raw, new
+\DateTimeZone('UTC'))` , mirroring those two neighbours. An embedded `Z`
+still overrides the passed zone, so ISO-8601 inputs behave exactly as
+before and the shared parity fixture is unaffected.
+
+**Why the existing tests didn't catch it, and what does now.** Two separate
+blind spots. `docs/fixtures/fingerprint-match-cases.json` supplies
+`"created_at": "2026-08-14T12:00:00Z"` — the explicit `Z` is honoured by
+`strtotime()` on any host, so every fixture case passed everywhere and the
+#23 cross-runtime drift guard was structurally blind to this entire class.
+`tests/run.php` *did* use naive `gmdate()` strings and so did fail off UTC —
+7 of its 8 assertions, scoring the same 99.6875 seen in production — but
+only if someone happened to run it on a non-UTC machine, and every assertion
+was self-consistent in whichever single timezone the host was set to.
+
+The new cases therefore *force* the variation rather than depending on it,
+looping `UTC` / `Africa/Lagos` / `America/New_York` within one run and
+restoring the original zone afterwards. Both expected values are exactly
+representable as floats (85.3125 is 5/16). Counter-checked by reverting only
+the matcher: 3 of the 6 new assertions fail and reproduce both live numbers
+exactly — 99.6875 and 86.5625. Note the fresh-click assertion *passes* under
+`America/New_York` even when buggy, since the clamp coincidentally returns
+the right answer for a genuinely fresh click; the stale-click assertion is
+the one that catches the dangerous direction.
+
+**Not a parity break.** The Node backend is immune — Drizzle returns real
+`Date` objects, never naive strings — so no matching change is needed there,
+and no naive-timestamp case was added to the shared fixture, which has no
+Node analogue and would blur what that file is for.
+
+**Credit.** Found downstream against a real deployment and reported
+upstream; independently reproduced here, including the sign-flip case,
+before the fix was applied.

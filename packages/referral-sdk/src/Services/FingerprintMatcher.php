@@ -167,7 +167,33 @@ final class FingerprintMatcher
         }
 
         $createdAtRaw = $stored['created_at'] ?? null;
-        $createdAt = $createdAtRaw !== null ? strtotime((string) $createdAtRaw) : false;
+        // Parsed as UTC explicitly rather than with strtotime(), which
+        // resolves a naive string in the *host app's* default timezone.
+        // `created_at` is written by UTC_TIMESTAMP() and reads back naive
+        // (a MySQL TIMESTAMP carries no zone designator), while the $now
+        // it's compared against is a true Unix timestamp — so a naive parse
+        // skews every recency score by the host's UTC offset. That isn't
+        // just a rounding loss: on a negative offset $elapsed goes negative
+        // and trips the `$elapsed <= 0` clamp below, handing *full* freshness
+        // credit to a click sitting at the far edge of its match window.
+        // Since this package installs into someone else's Laravel app, it
+        // can't assume date.timezone is UTC. Mirrors the explicit UTC zone
+        // already passed when parsing expires_at in match() above and in
+        // ClickStore::findClickForClaim(); this line was the lone outlier.
+        // An embedded "Z" still overrides the passed zone, so ISO-8601
+        // inputs (what docs/fixtures/fingerprint-match-cases.json supplies)
+        // behave exactly as before.
+        $createdAt = false;
+        if ($createdAtRaw !== null) {
+            try {
+                $createdAt = (new \DateTimeImmutable(
+                    (string) $createdAtRaw,
+                    new \DateTimeZone('UTC'),
+                ))->getTimestamp();
+            } catch (\Exception) {
+                $createdAt = false;
+            }
+        }
         if ($createdAt === false) {
             return 0.0;
         }
