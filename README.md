@@ -212,6 +212,30 @@ reasons, and this project doesn't pretend otherwise.
 care about, you want the data in your own database, or a per-MAU bill
 doesn't make sense for your margins.
 
+### Coming from Firebase Dynamic Links?
+
+FDL was deprecated in May 2023 **with no official replacement** and shut
+down completely on **25 August 2025** — every link stopped resolving,
+deferred linking included. If that's what brought you here, this is
+probably a closer fit than Branch is.
+
+FDL was never an MMP. It did link hosting, Universal/App Links handling,
+deferred deep linking, and basic click analytics — and nothing else. No
+ad-network attribution, no fraud detection, no campaign analytics. So the
+honest mapping is:
+
+| FDL did | here |
+| --- | --- |
+| Deferred deep linking | ✅ the core of this project |
+| Basic click tracking | ✅ every click is a row in your database |
+| Link hosting (`page.link`) | ❌ your own domain, your own routes |
+| Universal Links / App Links setup | ❌ yours to configure |
+
+In other words: **this covers the deferred-attribution half of FDL, not
+the link-hosting half.** That's the honest scope. If all you needed was the
+deferred part — which for referral flows is usually the case — the gap is
+smaller than it looks, and you get to keep the data.
+
 ### Status
 
 Running in production at [Sparkle](https://sparkle.ng), a Nigerian
@@ -392,3 +416,37 @@ To publish for real: `npm run build:sdks`, then `npm publish` in each package
   (`on_claim_callback`) in whichever backend config you use.
 - Link previews (WhatsApp/social) need server-side OG tags — see the web SDK
   README and `buildReferralMeta`.
+
+---
+
+## Contributing
+
+Contributions are genuinely welcome, and the project is set up so that a
+first one is easy to land.
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) covers setup, how to run each
+package's tests, and what to verify before opening a PR. CI runs every
+suite on each PR across both Node and PHP version ranges, so you get
+automated feedback without waiting on a review.
+
+**Good first issues** are labelled
+[`good first issue`](https://github.com/Newtdev/blynk-deferlink/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+— currently small, self-contained test-coverage tasks in the web SDK, each
+one a single file you can read in a couple of minutes.
+
+Two things worth knowing before you start:
+
+- **[`docs/decisions.md`](docs/decisions.md) is the map.** Every non-obvious
+  choice in this codebase has a numbered entry explaining the problem, the
+  decision, and what was actually built. If something looks wrong, check
+  there first — it's often deliberate, and the entry will say why.
+- **Verify against something real.** A recurring theme in that log is bugs
+  that only appeared on an actual device or a non-UTC host, and that passed
+  every automated check beforehand. If a change touches recovery, timezones,
+  or platform behaviour, run it somewhere real before calling it done.
+
+### Contributors
+
+<a href="https://github.com/Newtdev/blynk-deferlink/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Newtdev/blynk-deferlink" alt="Contributors" />
+</a>
