@@ -395,6 +395,10 @@ database, and change whatever doesn't fit — the code is yours at that
 point, and the API contract is small enough to modify without fear (two
 independent backends implement it, which is the proof it's not tangled).
 
+The full reasoning, including what this costs you — slower to adopt than
+`npm install`, and forks get no automatic security updates — is
+[decision #31](docs/decisions.md#31-distributed-as-a-fork-and-self-host-project-not-a-registry-dependency--done).
+
 This is how it runs in production today. [Sparkle](https://sparkle.ng), a
 Nigerian microfinance bank, runs its referral programme on it: the PHP
 backend SDK deployed on their own infrastructure, against their own

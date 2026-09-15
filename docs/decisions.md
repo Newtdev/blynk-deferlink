@@ -1550,3 +1550,71 @@ is precisely why it isn't load-bearing on its own.
 **Credit.** Found downstream by real end-to-end device testing and reported
 upstream, along with the analysis that the selection logic was not the
 culprit. Independently reproduced here before the fix was written.
+
+## 31. Distributed as a fork-and-self-host project, not a registry dependency — Done
+
+**Problem.** The packages were never published to npm or Packagist, and the
+README described that as a temporary state — *"not published to npm yet …
+until you publish, install them locally"*. Two things were wrong with
+leaving it there. The framing told anyone arriving from an article that the
+project was unfinished, which is the single worst impression to give at the
+moment someone is deciding whether to try it. And it was inaccurate about
+the intent: the absence of a registry install had become a deliberate
+position without ever being written down as one.
+
+**Decision.** Fork-and-self-host is the distribution model. No registry
+package, no hosted service, no account.
+
+The reasoning is the same reasoning the project exists for. Firebase
+Dynamic Links is shutting down, and Branch and AppsFlyer can reprice or
+rate-limit whenever they choose; that is what makes hosted attribution a
+dependency risk rather than a convenience. Attribution data is a bad thing
+to hold that risk over — every click, every device fingerprint, every
+conversion, and for most operators a reward budget attached to it.
+Publishing this as a package people depend on would rebuild the same
+structure one layer down: a project they don't control, sitting in the path
+of data they can't afford to lose access to. Self-hosting is the answer to
+that, so the distribution model has to match the argument.
+
+Two properties make the fork genuinely ownable rather than a burden.
+Modifying it is safe because the API contract is small and demonstrably
+not tangled — two independent backends (PHP and Node) implement it, and
+#23's cross-runtime parity work exists precisely to keep them honest. And
+it is not theoretical: Sparkle, a Nigerian microfinance bank, runs the PHP
+backend on its own infrastructure against its own database and reward
+logic, which is why the bugs in #14, #15, #29 and #30 were all found on
+real devices in a real deployment rather than in a test suite.
+
+**The trade-offs, stated rather than glossed.**
+
+- **Adoption is slower.** `npm install` converts a reader into a user in
+  one command; "fork this monorepo" does not. This costs stars and casual
+  trials, and that cost is accepted rather than disputed.
+- **Forks receive nothing automatically.** No Dependabot bump, no advisory
+  notification, no patched release. A security fix is a commit to `main`
+  that each fork has to pull. `SECURITY.md` says this outright — *a fork is
+  its own security maintainer* — because the alternative is operators
+  assuming a safety net that does not exist.
+- **Divergence is expected.** Forks will edit the code, so upstream fixes
+  may not apply cleanly. That is the price of the ownership the model
+  exists to provide, not a defect in it.
+- **Reversible in one direction only.** Publishing later is easy and
+  nothing here forecloses it. Unpublishing after people depend on a package
+  is not — which is the asymmetry that makes waiting the cheaper mistake.
+
+**Not a prohibition on packaging.** A team that would rather consume these
+as ordinary dependencies can publish the built packages to their own
+registry under their own scope; renaming the scope in each `package.json`
+is the only change required. What is rejected is *this* project being the
+registry dependency, not the packaging mechanism, and `npm run build:sdks`
+remains supported for exactly that.
+
+**Revisit when** the API contract has been stable across several
+deployments that are not Sparkle, and there is a maintenance commitment
+that can honour a published package's implied promises — semver
+discipline, advisories, and patched releases on a timeline someone else can
+plan around. Publishing before that would be making promises the project
+isn't yet staffed to keep. The four packages sit at `1.0.0` locally; that
+version number is a placeholder and should not be read as a stability
+claim, and `0.x` would be the honest starting point if they were ever
+published.
