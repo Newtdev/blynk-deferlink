@@ -1,0 +1,259 @@
+# =============================================================================
+#  CI — blynk-deferlink #NewtDev
+# =============================================================================
+#
+#  @overview
+#    Runs every test suite in the monorepo on pushes to main and on all pull
+#    requests. Four jobs:
+#
+#      javascript  test → typecheck → build, per package, per Node version
+#      php         zero-dep scoring suite, then PHPUnit, per PHP version
+#      timezones   scoring suite under non-UTC PHP timezones
+#      ci          aggregation gate — the single check to require
+#
+#  -- Security -----------------------------------------------------------------
+#
+#  @permissions contents:read
+#    Nothing here publishes, pushes, or comments. Both `npm ci` and
+#    `composer install` execute lifecycle scripts from the dependency tree,
+#    so this is what stops one compromised transitive package from getting a
+#    token that can write to the repo.
+#
+#  @persist-credentials false
+#    `actions/checkout` otherwise writes the token into .git/config, where
+#    any build or test script can read it off disk.
+#
+#  @pinning
+#    Third-party actions are pinned to a commit SHA — a tag like `v2` is a
+#    mutable pointer controlled by an account outside this org, and whatever
+#    it points at runs inside the job. `actions/*` are GitHub-owned, where
+#    tag pinning is accepted practice. Dependabot updates SHA pins fine.
+#
+#  @matrix-values
+#    Passed to the shell as env vars rather than interpolated into command
+#    strings. They're literals defined in this file so there is nothing to
+#    inject today; it costs nothing and stops the pattern being copied
+#    somewhere the value isn't trusted.
+#
+#  -- Version policy -----------------------------------------------------------
+#
+#  @floors node>=18.14 php>=8.1
+#    Both are past upstream EOL, and both are kept because they are what
+#    package.json `engines` and composer.json actually promise. A declared
+#    floor doesn't make anyone secure or insecure — dropping it wouldn't
+#    patch a user's runtime, only stop them installing. Revisit when a
+#    dependency forces it, not preemptively.
+#
+#  @ceilings node 24, php 8.4
+#    The floor alone catches nothing that breaks on what contributors and
+#    users actually run, so each matrix tests both ends.
+#
+#  @floor-coverage
+#    The Node floor runs typecheck and build but not the test suites. Every
+#    suite is invoked with a glob and Node's test runner only gained glob
+#    support in 21, so on 18 it looks for a literal path and fails. That is
+#    a dev-tooling limit rather than a published-package one — consumers
+#    install built output and never run these scripts — and typecheck plus
+#    build is what actually demonstrates the package compiles for the
+#    version `engines` promises. Making the suites run on 18 would mean
+#    adding a glob dependency for an already-EOL runtime.
+#
+#  -- Notable choices ----------------------------------------------------------
+#
+#  @concurrency
+#    Cancels superseded runs on pull requests only. Cancelling on main would
+#    leave default-branch commits with no completed CI result, which breaks
+#    bisecting and "was this commit green?" after a fast series of merges.
+#
+#  @composer-cache
+#    Keyed on composer.json, not composer.lock: this is a library and
+#    deliberately ships no lockfile, so hashFiles() on the lock would
+#    resolve empty and the key would never invalidate.
+#
+#  @build-order
+#    Build runs after typecheck — a package can typecheck and still fail to
+#    bundle, since entry-point and export-map problems only surface then.
+#    The three packages don't consume each other's build output, so order
+#    between them is irrelevant.
+#
+#  @timezones
+#    Recency compares a database timestamp against a Unix timestamp, so a
+#    naive parse silently skews every score by PHP's configured UTC offset —
+#    and on a negative offset it inflates stale clicks rather than merely
+#    rounding them off.
+#
+#    `-d date.timezone` is the correct lever and `TZ` is not: PHP's date
+#    functions read the INI setting and ignore the environment variable
+#    (verified — TZ alone leaves date_default_timezone_get() at UTC and
+#    strtotime() unchanged).
+#
+#    One job, not a matrix: the suite is ~0.05s of work, so four runner VMs
+#    cost far more than they return. The loop runs every zone and reports
+#    them all rather than aborting on the first failure — the *pattern* of
+#    which zones fail is what identifies an offset bug. Offsets deliberately
+#    include 45-minute ones. UTC is omitted; the php job covers it.
+#
+#  @aggregation
+#    `fail-fast: false` across two matrices means many separate check names.
+#    The trailing `ci` job gives branch protection one stable name to
+#    require, so adding a package or version doesn't silently escape the
+#    rules until someone updates them by hand.
+#
+#  @see docs/decisions.md #29
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  javascript:
+    name: JS/TS — ${{ matrix.package }} @ node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      # One package's failure must not hide the others.
+      fail-fast: false
+      matrix:
+        package: [referral-web, referral-mobile, referral-sdk-node]
+        node: ['18.14', '24']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # `npm ci` fails loudly if the lockfile drifts from any workspace's
+      # package.json, rather than silently resolving new versions.
+      - run: npm ci
+
+      # Skipped on the floor: every suite is invoked with a glob, and Node's
+      # test runner only gained glob support in 21 — on 18 it looks for a
+      # literal path and reports "Could not find src/**/*.test.ts". That is a
+      # limit of our dev tooling, not of the published package (consumers
+      # install built output and never run these scripts), so the floor still
+      # gets typecheck and build, which is what actually demonstrates the
+      # package compiles for the version `engines` promises.
+      - name: test
+        if: matrix.node != '18.14'
+        env:
+          PKG: ${{ matrix.package }}
+        run: npm --workspace "@blynk-deferlink/$PKG" run test
+
+      - name: typecheck
+        env:
+          PKG: ${{ matrix.package }}
+        run: npm --workspace "@blynk-deferlink/$PKG" run typecheck
+
+      - name: build
+        env:
+          PKG: ${{ matrix.package }}
+        run: npm --workspace "@blynk-deferlink/$PKG" run build
+
+  php:
+    name: PHP ${{ matrix.php }} — referral-sdk
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.4']
+    defaults:
+      run:
+        working-directory: packages/referral-sdk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: ${{ matrix.php }}
+          # pdo_sqlite backs the in-memory database the tests run against —
+          # no service container needed.
+          extensions: pdo, pdo_sqlite, json
+          coverage: none
+
+      # Runs before composer install on purpose: this is the suite a
+      # contributor can run with nothing provisioned, and it must never
+      # start depending on vendor/.
+      - name: scoring suite (no composer)
+        run: php tests/run.php
+
+      - name: resolve composer cache dir
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ matrix.php }}-${{ hashFiles('packages/referral-sdk/composer.json') }}
+          restore-keys: composer-${{ matrix.php }}-
+
+      - name: composer install
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: phpunit
+        run: vendor/bin/phpunit
+
+  timezones:
+    name: PHP scoring — timezone independence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: packages/referral-sdk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.4'
+          extensions: pdo, pdo_sqlite, json
+          coverage: none
+
+      - name: scoring suite across timezones
+        run: |
+          failed=0
+          for tz in Africa/Lagos America/New_York Asia/Kolkata Pacific/Chatham; do
+            echo "::group::date.timezone=$tz"
+            if php -d date.timezone="$tz" tests/run.php; then
+              echo "PASS  $tz"
+            else
+              echo "::error::scoring suite failed under $tz"
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$failed"
+
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [javascript, php, timezones]
+    if: always()
+    steps:
+      - name: check results
+        run: |
+          if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}; then
+            echo "::error::one or more CI jobs did not succeed"
+            exit 1
+          fi
+          echo "all jobs succeeded"
