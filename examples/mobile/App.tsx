@@ -123,9 +123,9 @@ function Screen() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.h1}>Blynk Recovery Demo</Text>
       <Text style={styles.intro}>
-        A live demo of blynk-deferlink's deferred deep linking recovery — an
-        open-source alternative to Branch/AppFlyer for referral and install
-        attribution, against the real backend.
+        A live demo of blynk-deferlink's deferred deep linking recovery —
+        self-hosted referral and install attribution, open source, running
+        against the real backend.
         github.com/Newtdev/blynk-deferlink
       </Text>
 
