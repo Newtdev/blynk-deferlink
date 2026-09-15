@@ -386,9 +386,9 @@ temporary state of affairs. Attribution data is the thing you least want
 sitting behind someone else's API: every click, every device fingerprint,
 every conversion. Self-hosting means the click table lives in *your*
 database, the matching runs on *your* server, and nobody can reprice,
-rate-limit, sunset, or read it. Firebase Dynamic Links is shutting down;
-that risk is the whole reason this exists, and shipping it as a hosted
-dependency would just recreate it.
+rate-limit, sunset, or read it. Firebase Dynamic Links shut down in August
+2025 and took every link with it; that risk is the whole reason this
+exists, and shipping it as a hosted dependency would just recreate it.
 
 So there's no registry install. Fork or clone, point the backend at your
 database, and change whatever doesn't fit — the code is yours at that

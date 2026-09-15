@@ -1566,9 +1566,10 @@ position without ever being written down as one.
 package, no hosted service, no account.
 
 The reasoning is the same reasoning the project exists for. Firebase
-Dynamic Links is shutting down, and Branch and AppsFlyer can reprice or
-rate-limit whenever they choose; that is what makes hosted attribution a
-dependency risk rather than a convenience. Attribution data is a bad thing
+Dynamic Links shut down on 25 August 2025 and every link it had ever minted
+stopped resolving, and Branch and AppsFlyer can reprice or rate-limit
+whenever they choose; that is what makes hosted attribution a dependency
+risk rather than a convenience. Attribution data is a bad thing
 to hold that risk over — every click, every device fingerprint, every
 conversion, and for most operators a reward budget attached to it.
 Publishing this as a package people depend on would rebuild the same
