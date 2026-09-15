@@ -1,9 +1,11 @@
 # blynk-deferlink
 
-A deferred deep linking referral system in three installable packages plus
-runnable examples. **New here?** Read this file top to bottom — it's written
-as a guided path, not a reference dump: what this is, how it works, how to
-run it, and where to go next depending on what you're trying to do.
+A deferred deep linking referral system you fork and self-host: four
+packages — two interchangeable backends, plus web and mobile — and runnable
+examples. In production at [Sparkle](https://sparkle.ng), a Nigerian
+microfinance bank. **New here?** Read this file top to bottom — it's
+written as a guided path, not a reference dump: what this is, how it works,
+how to run it, and where to go next depending on what you're trying to do.
 
 ```
 packages/
@@ -379,8 +381,30 @@ config field or endpoint shape.
 
 ## Installing the SDKs
 
-These packages are **not published to npm yet**, so `npm install @blynk-deferlink/...`
-won't resolve. Until you publish, install them locally — three ways:
+**Fork it and run it as your own.** That's the intended model, not a
+temporary state of affairs. Attribution data is the thing you least want
+sitting behind someone else's API: every click, every device fingerprint,
+every conversion. Self-hosting means the click table lives in *your*
+database, the matching runs on *your* server, and nobody can reprice,
+rate-limit, sunset, or read it. Firebase Dynamic Links is shutting down;
+that risk is the whole reason this exists, and shipping it as a hosted
+dependency would just recreate it.
+
+So there's no registry install. Fork or clone, point the backend at your
+database, and change whatever doesn't fit — the code is yours at that
+point, and the API contract is small enough to modify without fear (two
+independent backends implement it, which is the proof it's not tangled).
+
+This is how it runs in production today. [Sparkle](https://sparkle.ng), a
+Nigerian microfinance bank, runs its referral programme on it: the PHP
+backend SDK deployed on their own infrastructure, against their own
+database and their own reward logic. Nothing in this repo is a staging
+copy of that — it's the same code path, which is why the bugs in
+[`docs/decisions.md`](docs/decisions.md) were found on real devices rather
+than in tests.
+
+The packages are consumed from source. Three ways, depending on how your
+project is laid out:
 
 **1. Workspaces (what this repo uses).** From the repo root:
 
@@ -413,8 +437,11 @@ npm --workspace @blynk-deferlink/referral-web pack        # → blynk-deferlink-
 npm install ./blynk-deferlink-referral-web-1.0.0.tgz
 ```
 
-To publish for real: `npm run build:sdks`, then `npm publish` in each package
-(and `composer` / Packagist for the PHP one).
+**Publishing your fork privately.** If your team would rather consume these
+as ordinary dependencies than as source, publish them to your own registry
+under your own scope: `npm run build:sdks`, then `npm publish` in each
+package, and `composer` / Packagist for the PHP one. Renaming the scope in
+each `package.json` is the only change required.
 
 ---
 
