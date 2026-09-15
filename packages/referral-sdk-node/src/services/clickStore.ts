@@ -63,6 +63,35 @@ export class ClickStore {
   }
 
   /**
+   * Record the current fingerprint match on a click, rebinding it if it was
+   * already bound to some other device.
+   *
+   * Separate from lockToDevice() on purpose. That method's
+   * `matched = false` predicate is a security guard on the /claim path — the
+   * deterministic tier's first real use of a click, where losing the race
+   * must reject rather than proceed (decisions.md #21). Matching has the
+   * opposite requirement: a click has to be re-bindable, or a reinstall can
+   * never recover it, because on iOS the returning device presents a
+   * brand-new device id (decisions.md #30). Loosening lockToDevice() itself
+   * would have quietly removed that claim-time guard.
+   *
+   * Last write wins, which is exactly "last matched by" — and the caller has
+   * already decided this device should hold the attribution.
+   */
+  async bindMatch(clickId: string, deviceId: string, confidence: number): Promise<void> {
+    await this.db
+      .update(referralClicks)
+      .set({
+        matched: true,
+        matchedDeviceId: deviceId,
+        matchedAt: new Date(),
+        matchMethod: 'fingerprint',
+        matchConfidence: confidence,
+      })
+      .where(eq(referralClicks.clickId, clickId));
+  }
+
+  /**
    * Atomically lock a click to a device so it can never be matched twice.
    * Returns true only if this call is the one that won the lock. Records
    * `method`/`confidence` on the click row itself — this is the row /claim

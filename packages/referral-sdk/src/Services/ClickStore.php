@@ -68,6 +68,41 @@ class ClickStore
     }
 
     /**
+     * Record the current fingerprint match on a click, rebinding it if it was
+     * already bound to some other device.
+     *
+     * Separate from lockToDevice() on purpose. That method's
+     * `AND matched = 0` is a security guard on the /claim path — the
+     * deterministic tier's first real use of a click, where losing the race
+     * must reject rather than proceed (docs/decisions.md #21). Matching has
+     * the opposite requirement: a click has to be re-bindable, or a reinstall
+     * can never recover it, because on iOS the returning device presents a
+     * brand-new device id (docs/decisions.md #30). Loosening lockToDevice()
+     * itself would have quietly removed that claim-time guard.
+     *
+     * Last write wins, which is exactly "last matched by" — and the caller
+     * has already decided this device should hold the attribution.
+     */
+    public function bindMatch(
+        string $clickId,
+        string $deviceId,
+        float $confidence,
+    ): void {
+        $stmt = $this->pdo->prepare(
+            'UPDATE referral_clicks
+             SET matched = 1, matched_device_id = :device_id, matched_at = UTC_TIMESTAMP(),
+                 match_method = :method, match_confidence = :confidence
+             WHERE click_id = :click_id'
+        );
+        $stmt->execute([
+            ':device_id'  => $deviceId,
+            ':method'     => 'fingerprint',
+            ':confidence' => $confidence,
+            ':click_id'   => $clickId,
+        ]);
+    }
+
+    /**
      * Atomically lock a click to a device so it can never be matched twice.
      * Returns true only if this call is the one that won the lock. Records
      * `$method`/`$confidence` on the click row itself — this is the row

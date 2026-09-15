@@ -1438,3 +1438,115 @@ Node analogue and would blur what that file is for.
 **Credit.** Found downstream against a real deployment and reported
 upstream; independently reproduced here, including the sign-flip case,
 before the fix was applied.
+
+## 30. Matching consumed the click, so reinstalls lost attribution and repeat matches re-attributed silently — Done
+
+**Problem, reported downstream from real end-to-end device testing and
+reproduced here before anything was changed.** `/match` did not only read —
+it locked the winning click to the device, and the candidate query only ever
+considered unmatched clicks (`WHERE matched = 0` in PHP,
+`eq(referralClicks.matched, false)` in Node). A matched click therefore
+became invisible to everyone, *including the device that had just matched
+it*. `ClickStore::lockToDevice()`'s own docblock stated the original intent
+plainly: "so it can never be matched twice." That intent was the bug.
+
+**Symptom one — a reinstall recovers nothing.** One click, three install
+cycles. On iOS `identifierForVendor` is cleared when the last vendor app is
+uninstalled, so a reinstalled app presents a *new* device id:
+
+```
+install #1 (device-after-install-1): got FRIEND99 at 100.00
+install #2 (device-after-install-2): NO CODE RECOVERED
+install #3 (device-after-install-3): NO CODE RECOVERED
+```
+
+It compounded at `/claim`, which verifies the click is bound to the claiming
+device — so even a click that could still be found would have been rejected
+as unverified after a reinstall.
+
+**Symptom two — a repeat match credits a different referrer.** Same device,
+two identical calls seconds apart, two clicks in the window. The device's
+real referrer is `ALICE01`:
+
+```
+attempt 1 (SAME device): attributed to ALICE01 at 100.00
+attempt 2 (SAME device): attributed to BOB0002 at 85.00
+```
+
+Worse than symptom one, because nothing looks like an error. A retry, or a
+relaunch before signup completes, silently re-attributes the user to someone
+else. **The selection logic was never at fault and this was not
+non-determinism** — `match()` scans every candidate and keeps the maximum,
+with `ORDER BY created_at DESC` only settling ties. The second call correctly
+picked the best of what it could still see; the pool had changed underneath
+it. That misdiagnosis cost real time downstream, so it is written down here.
+
+**Decision.** Matching does not consume a click. `matched` now means "last
+matched by", not "used up" — guarding against a referral code being redeemed
+twice belongs in whatever records signups, not in making the click invisible
+to matching. The `matched` filter is gone from both backends' candidate
+queries.
+
+Removing the filter alone would have been wrong in one direction, though: a
+device whose fingerprint later stops clearing the threshold (IP moved, say)
+would lose an attribution it had already been given. So the resolution is:
+
+| existing binding | new candidate above threshold | result |
+| --- | --- | --- |
+| no | yes | best candidate — unchanged from before |
+| yes | no | keep the existing binding |
+| yes | yes | whichever **click** is newer |
+
+Two constraints that are easy to get wrong, both learned the hard way:
+
+- **Compare by click time, not confidence.** A stale click that happens to
+  score higher is still the wrong answer. Attribution is last-click-wins.
+- **A newer click below the confidence threshold must not take over**, or an
+  unrelated recent click could steal an attribution merely by being recent.
+
+An earlier attempt downstream stopped at "return the device's existing lock
+first." That was rejected, correctly: it binds a device to the first click it
+ever matched, so a user who clicks a *newer* referral link keeps being
+credited to the older referrer for the whole window.
+
+**A second method rather than a looser one.** `lockToDevice()`'s
+`AND matched = 0` is a security guard on the `/claim` path — the
+deterministic tier's first real use of a click, where losing the race must
+reject rather than proceed (#21). Matching has the opposite requirement, so
+it got its own `bindMatch()` which rebinds unconditionally. Loosening
+`lockToDevice()` itself would have quietly removed a claim-time guard while
+appearing to fix an unrelated matching bug.
+
+**Ordering by the click's time, not the lock's.** A device can now hold more
+than one binding, so the newest has to win. That ordering keys on
+`created_at` rather than `matched_at`: `matched_at` is written by
+`UTC_TIMESTAMP()` into a plain `TIMESTAMP`, both at one-second resolution, so
+two locks taken in the same second tie and the winner falls out of arbitrary
+storage order. `created_at` is stable *and* semantically right under
+last-click-wins.
+
+**A parity divergence fixed along the way.** PHP filtered candidates on both
+`expires_at > UTC_TIMESTAMP()` and the `created_at` window; Node filtered
+only on the window, with no expiry check at all. Harmless while expiry and
+the match window are the same duration, and a real difference between two
+backends documented as interchangeable the moment either is configured
+independently. Node now checks expiry too.
+
+**Verification.** The scoring suite could never have caught any of this — the
+bug was never in scoring, it was in which rows the query could see, and a
+pure-scoring suite has no database. `tests/run.php` now carries a
+database-backed section using in-memory SQLite with `UTC_TIMESTAMP()`
+shimmed via `sqliteCreateFunction()`, so it still provisions nothing: five
+reinstall cycles under five different device ids, three repeat matches
+against two competing referrers, takeover by a newer qualifying click,
+refusal of takeover by a newer non-qualifying one, and an unrelated device
+still matching nothing. Counter-checked by reintroducing only the
+`matched = 0` clause: 7 of the new assertions fail and reproduce both
+reported symptoms exactly, including the `ALICE01` → `BOB0002` flip. Worth
+noting that "a newer qualifying click takes over" *passes* against the buggy
+code — the old click is filtered out, so the new one wins by default — which
+is precisely why it isn't load-bearing on its own.
+
+**Credit.** Found downstream by real end-to-end device testing and reported
+upstream, along with the analysis that the selection logic was not the
+culprit. Independently reproduced here before the fix was written.

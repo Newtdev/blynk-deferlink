@@ -139,16 +139,16 @@ export function referralRouter(db: Db, config: ReferralConfig): Router {
         timezone: fingerprint.timezone,
         language: fingerprint.language,
         deviceId: device_id,
-      });
+      }, storedDeviceId);
       if (!result) {
         return res.json({ matched: false, referral_code: null });
       }
 
-      // Lock atomically. If another request won the race, report no match
-      // rather than handing the same click to two devices.
-      if (!(await clicks.lockToDevice(result.clickId, storedDeviceId, 'fingerprint', result.confidence))) {
-        return res.json({ matched: false, referral_code: null });
-      }
+      // Record the binding. Unlike the claim path this rebinds rather than
+      // refusing when the click is already matched — a returning device must
+      // be able to recover a click it (or a previous install of it) already
+      // matched. See decisions.md #30.
+      await clicks.bindMatch(result.clickId, storedDeviceId, result.confidence);
 
       const token = signClickToken(result.clickId, result.expiresAt, getClickTokenSecret());
       return res.json({

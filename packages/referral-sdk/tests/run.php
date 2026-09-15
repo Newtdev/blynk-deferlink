@@ -3,15 +3,22 @@
 declare(strict_types=1);
 
 /**
- * Zero-dependency sanity check for the scoring engine.
+ * Zero-dependency sanity check for the scoring engine and for the
+ * attribution rules around it.
  * Run with:  php tests/run.php
  * No composer install / PHPUnit required.
+ *
+ * The attribution section at the bottom needs a database, which it gets
+ * from in-memory SQLite with UTC_TIMESTAMP() registered as a custom
+ * function — so it still provisions nothing and installs nothing.
  */
 
 require __DIR__ . '/../src/Support/UserAgentParser.php';
 require __DIR__ . '/../src/Support/ReferralConfig.php';
 require __DIR__ . '/../src/Services/FingerprintMatcher.php';
+require __DIR__ . '/../src/Services/ClickStore.php';
 
+use BlynkDeferlink\Referral\Services\ClickStore;
 use BlynkDeferlink\Referral\Services\FingerprintMatcher;
 use BlynkDeferlink\Referral\Support\ReferralConfig;
 
@@ -141,6 +148,135 @@ foreach (['UTC', 'Africa/Lagos', 'America/New_York'] as $tz) {
     $assert("47h-old click = 85.3125 under {$tz}", 85.3125, $matcher->score($staleUtc, $iosDevice, $now));
 }
 date_default_timezone_set($tzBefore);
+
+// ---------------------------------------------------------------------------
+// Attribution rules (docs/decisions.md #30, issue #17)
+//
+// These need a database, because the bug they guard was never in the scoring
+// function — scoring was always correct. It was in which rows the candidate
+// query could see. A pure-scoring suite structurally cannot reach it.
+// ---------------------------------------------------------------------------
+
+echo "\nAttribution rules\n";
+
+$assertSame = function (string $name, ?string $expected, ?string $actual) use (&$pass, &$fail): void {
+    if ($expected === $actual) {
+        echo "  ✓ {$name}\n";
+        $pass++;
+    } else {
+        echo "  ✗ {$name}  (expected " . var_export($expected, true)
+            . ', got ' . var_export($actual, true) . ")\n";
+        $fail++;
+    }
+};
+
+$freshDb = function (): PDO {
+    $pdo = new PDO('sqlite::memory:');
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    // The SQL is MySQL-flavored; shim the one function it depends on.
+    @$pdo->sqliteCreateFunction('UTC_TIMESTAMP', static fn () => gmdate('Y-m-d H:i:s'), 0);
+    $pdo->exec(
+        'CREATE TABLE referral_clicks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, click_id TEXT NOT NULL,
+            referral_code TEXT NOT NULL, ip_address TEXT, user_agent TEXT,
+            screen_width INTEGER, screen_height INTEGER, pixel_ratio REAL,
+            timezone TEXT, language TEXT, platform TEXT, referrer_url TEXT,
+            matched INTEGER DEFAULT 0, matched_device_id TEXT, matched_at TEXT,
+            match_method TEXT, match_confidence REAL, created_at TEXT, expires_at TEXT)'
+    );
+    return $pdo;
+};
+
+$phoneUa   = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15';
+$phoneClick = [
+    'user_agent' => $phoneUa, 'screen_width' => 390, 'screen_height' => 844,
+    'timezone' => 'Africa/Lagos', 'language' => 'en-NG',
+];
+$phoneDevice = [
+    'device_model' => 'iPhone', 'platform' => 'ios',
+    'screen_width' => 390, 'screen_height' => 844,
+    'timezone' => 'Africa/Lagos', 'language' => 'en-NG',
+];
+
+// Reinstalling changes the device id on iOS (identifierForVendor is cleared
+// when the last vendor app is removed), so each cycle arrives looking like a
+// device the table has never seen. Five cycles because the original bug
+// returned the code on the first and nothing on every one after.
+$pdo = $freshDb();
+$matcher = new FingerprintMatcher($pdo, new ReferralConfig());
+$store = new ClickStore($pdo, new ReferralConfig());
+$store->store('FRIEND99', $phoneClick, '102.89.1.1');
+
+for ($cycle = 1; $cycle <= 5; $cycle++) {
+    $deviceId = "device-install-{$cycle}";
+    $result = $matcher->match($phoneDevice, '102.89.1.1', $deviceId);
+    $assertSame("reinstall #{$cycle} still recovers the clicked code", 'FRIEND99', $result['referral_code'] ?? null);
+    if ($result !== null) {
+        $store->bindMatch($result['click_id'], $deviceId, $result['confidence']);
+    }
+}
+
+// Two referrers in the window. Repeating the match must keep returning the
+// device's actual referrer, not fall through to the runner-up.
+$pdo = $freshDb();
+$matcher = new FingerprintMatcher($pdo, new ReferralConfig());
+$store = new ClickStore($pdo, new ReferralConfig());
+$store->store('ALICE01', $phoneClick, '102.89.1.1');
+$store->store('BOB0002', [
+    'user_agent' => $phoneUa, 'screen_width' => 430, 'screen_height' => 932,
+    'timezone' => 'Africa/Lagos', 'language' => 'en-NG',
+], '102.89.1.1');
+
+for ($attempt = 1; $attempt <= 3; $attempt++) {
+    $result = $matcher->match($phoneDevice, '102.89.1.1', 'stable-device');
+    $assertSame("repeat match #{$attempt} keeps the same referrer", 'ALICE01', $result['referral_code'] ?? null);
+    if ($result !== null) {
+        $store->bindMatch($result['click_id'], 'stable-device', $result['confidence']);
+    }
+}
+
+// Attribution is last-click-wins: a newer click that clears the threshold
+// takes over an existing binding.
+$pdo = $freshDb();
+$matcher = new FingerprintMatcher($pdo, new ReferralConfig());
+$store = new ClickStore($pdo, new ReferralConfig());
+$store->store('ALICE01', $phoneClick, '102.89.1.1');
+$first = $matcher->match($phoneDevice, '102.89.1.1', 'dev-1');
+$store->bindMatch($first['click_id'], 'dev-1', $first['confidence']);
+sleep(1); // created_at has one-second resolution; the new click must be newer
+$store->store('CAROL77', $phoneClick, '102.89.1.1');
+$second = $matcher->match($phoneDevice, '102.89.1.1', 'dev-1');
+$assertSame('a newer qualifying click takes the attribution over', 'CAROL77', $second['referral_code'] ?? null);
+
+// ...but only if it qualifies. An unrelated click must not steal an
+// attribution merely by being recent.
+$pdo = $freshDb();
+$matcher = new FingerprintMatcher($pdo, new ReferralConfig());
+$store = new ClickStore($pdo, new ReferralConfig());
+$store->store('ALICE01', $phoneClick, '102.89.1.1');
+$first = $matcher->match($phoneDevice, '102.89.1.1', 'dev-1');
+$store->bindMatch($first['click_id'], 'dev-1', $first['confidence']);
+sleep(1);
+$store->store('MALLORY1', [
+    'user_agent' => 'Mozilla/5.0 (Linux; Android 14; Pixel 7 Build/AP1A) AppleWebKit/537.36',
+    'screen_width' => 412, 'screen_height' => 915,
+    'timezone' => 'Europe/Berlin', 'language' => 'de',
+], '8.8.8.8');
+$third = $matcher->match($phoneDevice, '102.89.1.1', 'dev-1');
+$assertSame('a newer non-qualifying click does not steal the attribution', 'ALICE01', $third['referral_code'] ?? null);
+
+// A device with no binding and nothing worth matching gets nothing — the
+// threshold still has to mean something.
+$pdo = $freshDb();
+$matcher = new FingerprintMatcher($pdo, new ReferralConfig());
+$store = new ClickStore($pdo, new ReferralConfig());
+$store->store('NOBODY1', [
+    'user_agent' => 'Mozilla/5.0 (Linux; Android 14; Pixel 7 Build/AP1A) AppleWebKit/537.36',
+    'screen_width' => 412, 'screen_height' => 915,
+    'timezone' => 'Europe/Berlin', 'language' => 'de',
+], '8.8.8.8');
+$none = $matcher->match($phoneDevice, '102.89.1.1', 'unknown-device');
+$assertSame('an unrelated device still matches nothing', null, $none['referral_code'] ?? null);
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
