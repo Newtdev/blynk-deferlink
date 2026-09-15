@@ -7,8 +7,9 @@ namespace BlynkDeferlink\Referral\Support;
 /**
  * Applies `hash_device_ids` consistently everywhere a device_id is
  * persisted — `referral_clicks.matched_device_id` (see
- * ClickStore::lockToDevice, called from MatchController/ClaimController)
- * and `referral_conversions.device_id` (ConversionTracker) both need to
+ * ClickStore::bindMatch from MatchController and ClickStore::lockToDevice
+ * from ClaimController) and `referral_conversions.device_id`
+ * (ConversionTracker) both need to
  * agree on the same stored form, or a lock-ownership check compares a
  * hash against a raw value and never matches. See decisions.md #21 (the
  * bug this was originally caught fixing).

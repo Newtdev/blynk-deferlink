@@ -1,4 +1,4 @@
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { and, desc, gt, gte } from 'drizzle-orm';
 import type { ReferralConfig } from '../config.js';
 import type { Db } from '../db/client.js';
 import { referralClicks, referralMatchAttempts } from '../db/schema.js';
@@ -135,11 +135,34 @@ export class FingerprintMatcher {
     return weight * (1 - elapsedMs / windowMs);
   }
 
-  /** Find the best matching unclaimed click for a device, within the match window. */
-  async match(incoming: IncomingFingerprint): Promise<MatchResult | null> {
+  /**
+   * Find the best matching click for a device, within the match window.
+   *
+   * Matching deliberately does **not** consume a click. `matched` means
+   * "last matched by", not "used up" — see docs/decisions.md #30. An
+   * already-matched click stays a candidate, which is what lets a reinstall
+   * recover (on iOS the device id itself changes when the last vendor app is
+   * uninstalled, so the returning device is a *new* device as far as this
+   * table is concerned) and what stops a second match from silently falling
+   * through to a runner-up and re-attributing the user to a different
+   * referrer. Guarding against a code being redeemed twice belongs in
+   * whatever records signups, not in making the click invisible here.
+   *
+   * `deviceId` (already hashed) lets a device keep an attribution it has
+   * already been given if its fingerprint later stops clearing the
+   * confidence threshold.
+   */
+  async match(incoming: IncomingFingerprint, deviceId?: string): Promise<MatchResult | null> {
     const windowStart = new Date(Date.now() - this.config.matchWindowSeconds() * 1000);
 
-    // Only fresh, unmatched clicks. Newest first: last-click-wins on ties.
+    // No `matched = false` filter: that single clause was the whole of #17.
+    // The expiry check mirrors the PHP backend, which has always had it —
+    // the two are meant to be interchangeable, and without it this would
+    // diverge the moment expiry and the match window are configured to
+    // different durations.
+    // Newest first so ties resolve last-click-wins, and so the first row seen
+    // for this device is its most recent binding — ordering by matchedAt
+    // instead would be unstable at one-second storage resolution.
     const rows = await this.db
       .select({
         clickId: referralClicks.clickId,
@@ -152,20 +175,28 @@ export class FingerprintMatcher {
         language: referralClicks.language,
         createdAt: referralClicks.createdAt,
         expiresAt: referralClicks.expiresAt,
+        matchedDeviceId: referralClicks.matchedDeviceId,
       })
       .from(referralClicks)
       .where(
         and(
-          eq(referralClicks.matched, false),
           gte(referralClicks.createdAt, windowStart),
+          gt(referralClicks.expiresAt, new Date()),
         ),
       )
       .orderBy(desc(referralClicks.createdAt));
 
     let best: (typeof rows)[number] | null = null;
     let bestScore = 0;
+    let existing: (typeof rows)[number] | null = null;
 
     for (const row of rows) {
+      // Rows arrive newest-first, so the first one bound to this device is
+      // its newest binding; later (older) ones are superseded.
+      if (existing === null && deviceId !== undefined && row.matchedDeviceId === deviceId) {
+        existing = row;
+      }
+
       const s = this.score(row, incoming);
       if (s > bestScore) {
         bestScore = s;
@@ -173,22 +204,43 @@ export class FingerprintMatcher {
       }
     }
 
-    const matched = best !== null && bestScore >= this.config.minConfidence;
+    // Only a candidate clearing the threshold may take an attribution over.
+    // Without this a newer but unrelated click could steal one purely by
+    // being recent.
+    const bestQualifies = best !== null && bestScore >= this.config.minConfidence;
+    const candidate = bestQualifies ? best : null;
+
+    let winner: (typeof rows)[number] | null;
+    if (candidate !== null && existing !== null) {
+      // Last-click-wins, compared by the *click's* time rather than by
+      // confidence: a stale click that happens to score higher is still the
+      // wrong answer.
+      winner = candidate.createdAt.getTime() > existing.createdAt.getTime() ? candidate : existing;
+    } else {
+      // Falling back to `existing` keeps an attribution the device already
+      // has when nothing clears the threshold this time — a retry or a
+      // relaunch on a weaker signal must not silently lose it.
+      winner = candidate ?? existing;
+    }
+
     await this.logAttempt(incoming, {
-      matched,
+      matched: winner !== null,
       candidateCount: rows.length,
       bestScore: rows.length > 0 ? bestScore : null,
       bestClickId: best?.clickId ?? null,
     });
 
-    if (!matched) return null;
+    if (winner === null) return null;
+
+    // Re-score the winner rather than reusing bestScore, which belongs to
+    // `best` and would be wrong whenever `existing` won.
+    const confidence = winner === best ? bestScore : this.score(winner, incoming);
 
     return {
-      // best is non-null here — matched only becomes true when it is.
-      clickId: best!.clickId,
-      referralCode: best!.referralCode,
-      confidence: Math.round(bestScore * 100) / 100,
-      expiresAt: best!.expiresAt,
+      clickId: winner.clickId,
+      referralCode: winner.referralCode,
+      confidence: Math.round(confidence * 100) / 100,
+      expiresAt: winner.expiresAt,
     };
   }
 

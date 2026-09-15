@@ -52,7 +52,7 @@ class MatchController
         $fingerprint = $data['fingerprint'];
         $fingerprint['platform'] = $data['platform'];
 
-        $result = $this->matcher->match($fingerprint, (string) $request->ip());
+        $result = $this->matcher->match($fingerprint, (string) $request->ip(), $storedDeviceId);
 
         if ($result === null) {
             return response()->json([
@@ -61,14 +61,11 @@ class MatchController
             ]);
         }
 
-        // Lock atomically. If another request won the race, report no match
-        // rather than handing the same click to two devices.
-        if (!$this->clicks->lockToDevice($result['click_id'], $storedDeviceId, 'fingerprint', $result['confidence'])) {
-            return response()->json([
-                'matched'       => false,
-                'referral_code' => null,
-            ]);
-        }
+        // Record the binding. Unlike the claim path this rebinds rather than
+        // refusing when the click is already matched — a returning device
+        // must be able to recover a click it (or a previous install of it)
+        // already matched. See docs/decisions.md #30.
+        $this->clicks->bindMatch($result['click_id'], $storedDeviceId, $result['confidence']);
 
         $token = ClickToken::sign($result['click_id'], $result['expires_at'], $this->config->requireClickTokenSecret());
 

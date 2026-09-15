@@ -41,13 +41,28 @@ final class FingerprintMatcher
     }
 
     /**
-     * Find the best matching unclaimed click for a device.
+     * Find the best matching click for a device.
      *
-     * @param array<string,mixed> $incoming Fingerprint sent by the app on first launch.
+     * Matching deliberately does **not** consume a click. `matched` means
+     * "last matched by", not "used up" — see docs/decisions.md #30. An
+     * already-matched click stays a candidate, which is what lets a
+     * reinstall recover (on iOS the device id itself changes when the last
+     * vendor app is uninstalled, so the returning device is a *new* device
+     * as far as this table is concerned) and what stops a second match from
+     * silently falling through to a runner-up and re-attributing the user to
+     * a different referrer. Guarding against a referral code being redeemed
+     * twice belongs in whatever records signups, not in making the click
+     * invisible here.
+     *
+     * @param array<string,mixed> $incoming  Fingerprint sent by the app on first launch.
      * @param string              $requestIp Server-observed IP of the match request.
+     * @param string|null         $deviceId  Already-hashed device id, when known. Lets a
+     *                                       device keep an attribution it has already been
+     *                                       given if its fingerprint later stops clearing
+     *                                       the confidence threshold.
      * @return array{click_id: string, referral_code: string, confidence: float, expires_at: \DateTimeImmutable}|null
      */
-    public function match(array $incoming, string $requestIp): ?array
+    public function match(array $incoming, string $requestIp, ?string $deviceId = null): ?array
     {
         if ($this->pdo === null) {
             throw new \LogicException('FingerprintMatcher::match() requires a PDO connection.');
@@ -57,14 +72,17 @@ final class FingerprintMatcher
 
         $windowStart = gmdate('Y-m-d H:i:s', time() - $this->config->matchWindowSeconds());
 
-        // Only consider fresh, unmatched clicks. Newest first: last-click-wins on ties.
+        // No `matched = 0` filter: that single clause was the whole of #17.
+        // Newest first so ties resolve last-click-wins, and so the first row
+        // seen for this device is its most recent binding — ordering by
+        // matched_at instead would be unstable, since UTC_TIMESTAMP() has
+        // one-second resolution and two locks taken in the same second tie.
         $stmt = $this->pdo->prepare(
             'SELECT click_id, referral_code, ip_address, user_agent,
                     screen_width, screen_height, timezone, language, platform,
-                    created_at, expires_at
+                    created_at, expires_at, matched_device_id
              FROM referral_clicks
-             WHERE matched = 0
-               AND expires_at > UTC_TIMESTAMP()
+             WHERE expires_at > UTC_TIMESTAMP()
                AND created_at >= :window_start
              ORDER BY created_at DESC'
         );
@@ -73,9 +91,20 @@ final class FingerprintMatcher
 
         $best = null;
         $bestScore = 0.0;
+        $existing = null;
         $now = time();
 
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            // Rows arrive newest-first, so the first one bound to this device
+            // is its newest binding; later (older) ones are superseded.
+            if ($existing === null
+                && $deviceId !== null
+                && $row['matched_device_id'] !== null
+                && hash_equals((string) $row['matched_device_id'], $deviceId)
+            ) {
+                $existing = $row;
+            }
+
             $score = $this->score($row, $incoming, $now);
             if ($score > $bestScore) {
                 $bestScore = $score;
@@ -83,15 +112,44 @@ final class FingerprintMatcher
             }
         }
 
-        if ($best === null || $bestScore < $this->config->minConfidence) {
+        // Only a candidate that clears the threshold may take an attribution
+        // over. Without this a newer but unrelated click could steal one
+        // purely by being recent.
+        if ($best !== null && $bestScore < $this->config->minConfidence) {
+            $best = null;
+        }
+
+        if ($best !== null && $existing !== null) {
+            // Attribution is last-click-wins, compared by the *click's* time
+            // rather than by confidence: a stale click that happens to score
+            // higher is still the wrong answer. A newer click takes over; an
+            // older one leaves the existing binding alone.
+            $winner = strtotime((string) $best['created_at']) > strtotime((string) $existing['created_at'])
+                ? $best
+                : $existing;
+        } else {
+            // Falling back to $existing keeps an attribution the device has
+            // already been given when nothing clears the threshold this time
+            // — a retry or a relaunch on a weaker signal must not silently
+            // lose it.
+            $winner = $best ?? $existing;
+        }
+
+        if ($winner === null) {
             return null;
         }
 
+        // Re-score the winner rather than reusing $bestScore, which belongs
+        // to $best and would be wrong whenever $existing won.
+        $confidence = $winner === $best
+            ? $bestScore
+            : $this->score($winner, $incoming, $now);
+
         return [
-            'click_id'      => (string) $best['click_id'],
-            'referral_code' => (string) $best['referral_code'],
-            'confidence'    => round($bestScore, 2),
-            'expires_at'    => new \DateTimeImmutable((string) $best['expires_at'], new \DateTimeZone('UTC')),
+            'click_id'      => (string) $winner['click_id'],
+            'referral_code' => (string) $winner['referral_code'],
+            'confidence'    => round($confidence, 2),
+            'expires_at'    => new \DateTimeImmutable((string) $winner['expires_at'], new \DateTimeZone('UTC')),
         ];
     }
 
