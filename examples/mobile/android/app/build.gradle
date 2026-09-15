@@ -114,7 +114,15 @@ android {
         applicationId 'dev.blynkdeferlink.demo'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
+        // Bump on every build you intend to hand someone. Android refuses to
+        // install an APK over an installed one with a *lower* code, and the
+        // demo ships as an unlisted APK (see the demo-android-* releases), so
+        // there's no store to enforce this for us. Equal codes still reinstall
+        // fine, which is why demo-android-v1 shipped as 1 twice without
+        // trouble — but a third at 1 would have been refused.
+        // This is the value EAS actually reads: app.json's is ignored outright
+        // because this native android/ directory exists.
+        versionCode 2
         versionName "1.0.0"
     }
     signingConfigs {

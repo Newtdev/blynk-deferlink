@@ -273,13 +273,18 @@ automatic via the Play referrer param; iOS: a real clipboard check, falling
 back to a real fingerprint match), with the actual request/response for
 every step.
 
-**Want the real mobile app, not just the web half?** [Install the Android demo](https://expo.dev/accounts/newtdev/projects/blynk-recovery-demo/builds/547ed52d-afed-4e8e-ab69-fe4d4a42e96e)
-— an EAS internal-distribution build, no Play Store listing needed; open
-that link on an Android device (or scan its QR code) to install it
-directly. iOS doesn't have an equivalent link yet — internal distribution
-there needs a registered Apple Developer account and per-device UDID
-registration, so for now the iOS side is only reachable by building it
-yourself (see below).
+**Want the real mobile app, not just the web half?** [Download the Android
+demo APK](https://github.com/Newtdev/blynk-deferlink/releases/download/demo-android-v1/blynk-recovery-demo-v1.apk)
+— open that link on an Android device and install it; no Play Store
+listing and no Expo account needed. You'll have to allow installs from
+your browser the first time, since it's unlisted rather than
+Play-distributed. It's served from a [GitHub
+release](https://github.com/Newtdev/blynk-deferlink/releases/tag/demo-android-v1)
+deliberately: the EAS build link this used to point at expires after 30
+days, and did — a release asset doesn't. iOS has no equivalent link —
+internal distribution there needs a registered Apple Developer account and
+per-device UDID registration, so for now the iOS side is only reachable by
+building it yourself (see below).
 
 Otherwise, the fastest way to see the whole thing work locally, before
 installing anything for real. Three terminals. No PHP or database required
