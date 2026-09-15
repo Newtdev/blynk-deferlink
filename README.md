@@ -121,6 +121,13 @@ button is rendered and tapped. Probabilistic matching sees an observed
 ~85–90% match rate on iOS, where it's the default fallback; lower priority
 on Android, where it's a fallback of last resort.
 
+Treat that iOS figure as what a *single* self-hosted deployment sees, and
+don't compare it directly against a commercial MMP's published numbers.
+Branch and AppsFlyer score probabilistic matches against signal pooled
+across their whole SDK install base — many apps, shared IP graphs — while
+this only ever sees your own clicks. That's a structural difference in
+available signal, not a tuning gap you can close by adjusting weights.
+
 **The proof that makes both deterministic paths possible**: every
 recovered code carries a signed proof (`click_id.expiry.hmac`), minted
 once at `/click` — this is what lets both deterministic paths stay
@@ -130,6 +137,105 @@ one a user typed in by hand) can reach signup, but can never clear
 `/claim` — see [`docs/decisions.md`](docs/decisions.md) #21/#22 for the
 full reasoning behind why this replaced an earlier redeem-round-trip
 design.
+
+---
+
+## Compared to Branch and AppsFlyer
+
+**Read the scope line first, because it's the part that decides whether
+this is for you:** Branch and AppsFlyer are mobile measurement platforms.
+blynk-deferlink is the deferred-deep-linking and referral-attribution
+slice of what they do, self-hosted. If you need ad-network attribution,
+this is not a replacement.
+
+|  | blynk-deferlink | Branch / AppsFlyer |
+| --- | --- | --- |
+| Hosting | your infrastructure | SaaS |
+| Click and conversion data | your database | their cloud |
+| Cost | your hosting bill | see below |
+| Source | MIT, forkable | closed |
+| Vendor lock-in | none — it's your schema | re-instrumentation to leave |
+| Third-party data sharing | none | governed by their terms |
+
+### What you give up
+
+Worth being blunt about, because it's most of what the money buys:
+
+- **No ad-network attribution.** No SKAdNetwork, no SRNs, no Meta/Google/
+  TikTok install attribution. If you're attributing paid UA spend, you
+  need an MMP, and this isn't one.
+- **No Universal Links / App Links setup.** This is the one most likely to
+  surprise you, since it's a headline Branch feature. Branch hosts the
+  `apple-app-site-association` and `assetlinks.json` files and handles
+  domain verification for you; here that's yours to configure. The landing
+  page does attempt to open an already-installed app via its custom URL
+  scheme, but that attempt is deliberately fired into a hidden iframe and
+  is effectively inert — no custom-scheme technique is both silent when the
+  app is absent and functional when it's present. Only Universal Links and
+  App Links solve that properly. See
+  [`docs/decisions.md`](docs/decisions.md) #27 for the full reasoning.
+  Deferred deep linking — the actual point of this project — works
+  regardless, because it runs after install rather than at link-tap.
+- **No dashboard.** There's an API and a database. Analytics, cohorting
+  and campaign reporting are yours to build or bolt on.
+- **No fraud detection.** Nothing equivalent to Protect360. The signed
+  click token (see #21/#22 above) stops forged claims, but click-spamming
+  and install-farm detection at scale are not addressed.
+- **No support SLA.** It's an open-source project.
+- **You run it.** A backend, a database, retention, and uptime.
+
+### What you get instead
+
+- The full recovery stack — Android Install Referrer, iOS clipboard
+  handoff, and fingerprint matching fallback — with the reasoning for
+  every non-obvious decision written down in
+  [`docs/decisions.md`](docs/decisions.md).
+- Attribution data that stays in your own database, which matters if
+  you're in a regulated sector or somewhere data residency is a
+  constraint.
+- Cost that scales with your infrastructure rather than your MAU count.
+  Neither vendor publishes list pricing; Branch is reported to begin
+  around $500/month with contracts commonly in the $15k–$200k+/year
+  range, and AppsFlyer bills roughly $0.07 per conversion after a free
+  allowance, which reportedly reaches around $84k/year at 100k monthly
+  conversions. Both have free tiers — Branch around 10k MAU, AppsFlyer
+  around 12k lifetime non-organic installs — that are genuinely
+  sufficient for small apps. Check their current pricing directly;
+  these are third-party reports, not quotes.
+
+**When to use them instead:** you're running paid acquisition and need
+MMP attribution; you want fraud protection you don't have to build; or
+you'd rather buy a supported product than operate one. Those are good
+reasons, and this project doesn't pretend otherwise.
+
+**When to use this:** referral and invite flows are the attribution you
+care about, you want the data in your own database, or a per-MAU bill
+doesn't make sense for your margins.
+
+### Status
+
+Running in production at [Sparkle](https://sparkle.ng), a Nigerian
+microfinance bank, on the PHP backend — real referral traffic, real
+conversions. A second Sparkle app is rolling out on it now. The Node
+backend serves this project's own live demo.
+
+**See it live in production:** https://sparkle.ng/referral/L82WDL — a real
+Sparkle referral link, served by this SDK. Open it on a phone to watch the
+actual flow: the landing page registers a click, hands the code off, and
+the app recovers it after install. (It's the maintainer's own referral
+link — Sparkle only credits a referral once a referred user completes a
+first transaction, so opening it to watch the mechanics does nothing. It's
+here because a real production link demonstrates more than a staged one.)
+
+One thing worth knowing: **coverage is uneven by package.** The scoring
+engine, click tokens and conversion tracking are well covered on both
+backends; `referral-web`'s test suite is new and still thin. CI runs every
+suite on each PR across both Node and PHP version ranges.
+
+`docs/decisions.md` is the honest record of how this was built — including
+the bugs found by actually running it on real devices, and the trade-offs
+accepted rather than solved. It's the fastest way to judge whether the
+engineering here meets your bar.
 
 ---
 
