@@ -108,5 +108,39 @@ $androidDevice = [
 ];
 $assert('android OS-family match = 100', 100.0, $matcher->score($storedAndroid, $androidDevice, $now));
 
+// Recency must not depend on the host's timezone. Every assertion above
+// runs in whichever single timezone the machine happens to be set to, and
+// is self-consistent either way — so they all pass on a UTC host and say
+// nothing about any other. (Before the fix these same cases did fail off
+// UTC — 7 of 8, scoring 99.6875 on UTC+1, matching what a live UTC+1
+// deployment actually returned — but only if you happened to run them
+// there.) These cases force the variation instead of depending on it.
+//
+// The shared parity fixture can't cover this: its created_at carries an
+// explicit "Z", which strtotime() honours on any host, so it passes
+// everywhere. Production MySQL returns a *naive* string, which is the
+// shape that breaks. Node is unaffected (Drizzle returns real Date
+// objects), so this is a PHP-only bug, not a parity break — deliberately
+// tested here rather than added to the cross-runtime fixture.
+$tzBefore = date_default_timezone_get();
+foreach (['UTC', 'Africa/Lagos', 'America/New_York'] as $tz) {
+    date_default_timezone_set($tz);
+
+    // Naive string with no zone designator — exactly what a MySQL
+    // TIMESTAMP column hands back, unlike the fixture's ISO-8601 form.
+    $freshUtc = $storedIos;
+    $freshUtc['created_at'] = gmdate('Y-m-d H:i:s', $now);
+    $assert("perfect match = 100 under {$tz}", 100.0, $matcher->score($freshUtc, $iosDevice, $now));
+
+    // A click at the far edge of the window must still be scored as old.
+    // On a negative UTC offset the naive parse pushed $elapsed negative,
+    // tripping the "clock skew" clamp and paying full recency credit to a
+    // 47-hour-old click (86.5625 instead of 85.3125 under America/New_York).
+    $staleUtc = $storedIos;
+    $staleUtc['created_at'] = gmdate('Y-m-d H:i:s', $now - 47 * 3600);
+    $assert("47h-old click = 85.3125 under {$tz}", 85.3125, $matcher->score($staleUtc, $iosDevice, $now));
+}
+date_default_timezone_set($tzBefore);
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
