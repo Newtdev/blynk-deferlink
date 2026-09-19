@@ -185,6 +185,17 @@ Worth being blunt about, because it's most of what the money buys:
   and install-farm detection at scale are not addressed.
 - **No support SLA.** It's an open-source project.
 - **You run it.** A backend, a database, retention, and uptime.
+- **One app per deployment.** A deployment has no notion of *which* app a
+  click belongs to, so two apps sharing one backend and one
+  `referral_clicks` table can cross-match: fingerprint matching considers
+  every recent click, and the five non-recency signals (IP, device model,
+  screen, timezone, language) sum to 85 against a default threshold of 70.
+  Two apps aimed at the same user base — a consumer app and a companion
+  app, say — clear that bar on ordinary household overlap rather than by
+  coincidence, and the second app's user gets attributed the first app's
+  referrer. Run a separate deployment and database per app until app
+  scoping lands; see [`docs/decisions.md`](docs/decisions.md) #32 for the
+  analysis and the planned fix.
 
 ### What you get instead
 
