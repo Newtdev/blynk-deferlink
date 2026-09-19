@@ -1765,3 +1765,49 @@ cheapest version of that experiment is a person offering to pay for it.
 then, a second app on it produces silent cross-app mis-attribution — the
 one category of bug this project cannot ship, since every other guarantee
 it makes rests on attributing the right click to the right install.
+
+### Corroboration: the second app arrived internally, not publicly
+
+Recorded 2026-09-19, four days after the above. The predicted trigger —
+"the day a second app uses the deployment" — has materialised, and not in
+the form this entry anticipated.
+
+Sparkle is rolling out a second app, **Sparkle U18**, alongside the
+existing one. That changes two things about the analysis above.
+
+**First, it is no longer a hypothesis.** The entry was written about a
+shared *public* deployment. But nothing in Finding 1 depends on the second
+app belonging to a different organisation — it only requires two apps and
+one `referral_clicks` table. A single self-hoster running two of their own
+apps against one deployment reaches the identical defect without ever
+sharing anything with anyone. That is a materially wider blast radius than
+this entry originally claimed, and it means app scoping is not solely a
+prerequisite for hosting; it is a limit on the self-hosted model as
+documented in #31.
+
+**Second, this particular pair is close to the worst case the scoring
+engine can produce.** The 85-point non-recency floor assumed a coincidence:
+two strangers who happen to share a NAT address and a handset model. A
+consumer banking app and its under-18 companion do not need the
+coincidence. A parent and their child are in the same household, behind the
+same WiFi, in the same timezone and locale, plausibly on the same handset
+model — every non-recency signal aligned by the ordinary structure of the
+product rather than by chance. Where the generic case needs luck to
+cross-match, this pair needs luck *not* to.
+
+**Consequence for sequencing.** Rolling out any second app against a shared
+deployment requires the correctness block first, self-hosted or not. It
+also means a naive rollout of that block would break a live system: rows
+written before `app_id` exists carry no value for it, so a `/match` that
+starts filtering on `app_id` would render every pre-existing click
+unmatchable and silently kill attribution for users mid-funnel. The column
+has to arrive nullable, with filtering gated until existing rows are
+backfilled — the migration is the risky part here, not the query change.
+
+**Consequence for npm.** #31 defers registry publishing, and the adoption
+argument for reversing that is "install the SDK and it works against a
+backend you didn't have to deploy." That is the hosted path, so it inherits
+this entry in full. The ordering is therefore fixed and worth stating
+plainly: app scoping, then a shared backend that is safe to point at, then
+a published package that means something. Publishing first would ship an
+install whose happy path is the defect.
