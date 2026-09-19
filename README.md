@@ -7,6 +7,52 @@ microfinance bank. **New here?** Read this file top to bottom — it's
 written as a guided path, not a reference dump: what this is, how it works,
 how to run it, and where to go next depending on what you're trying to do.
 
+## See it working
+
+A referral link tapped on a real iPhone, on cellular, installing from the
+App Store — and the code arriving in the signup field on the other side.
+This isn't the demo app or a staged build: it's
+[Sparkle](https://sparkle.ng)'s live production release, a Nigerian
+microfinance bank, running this SDK.
+
+https://github.com/user-attachments/assets/df1bc936-46cc-4e6a-8680-3d0fee641158
+
+Thirty-five seconds, one take, nothing sped up or cut:
+
+| | |
+| --- | --- |
+| 0:00 | A referral link, `sparkle.ng/referral/L82WDL` |
+| 0:06 | The landing page registers the click and starts its countdown |
+| 0:10 | App Store — a real download, not a prepared build |
+| 0:26 | First launch, onboarding |
+| **0:32** | **Referral screen: the field is empty, with a Paste button** |
+| **0:33** | **`L82WDL` is in the field. Paste becomes Continue** |
+
+That half-second is the entire point of the iOS deterministic tier. The
+code was written to the clipboard by the landing page moments before the
+App Store redirect, survived the install, and came back without a network
+call, a fingerprint guess, or the user typing anything.
+
+Two details worth watching for, because both are deliberate:
+
+- **The Paste button is enabled.** It only is when the clipboard genuinely
+  holds a valid payload, which means the handoff on the web side worked.
+  A disabled button is what a broken handoff looks like.
+- **No "pasted from Safari" banner appears.** That's `UIPasteControl`
+  doing its job — the user's tap authorises the read, so iOS doesn't have
+  to warn them about it. See [`docs/decisions.md`](docs/decisions.md) #18
+  for why this tier is a tap rather than an automatic read.
+
+This is the iOS path, which is the harder one to believe — it depends on a
+clipboard payload surviving Safari, the App Store and an install. Android
+is the easy case and needs no video: the Play Install Referrer hands the
+code over before the app's first frame.
+
+Want to drive it yourself rather than watch? [Quick start](#quick-start--run-the-demo)
+has a live web demo and an Android APK.
+
+---
+
 ```
 packages/
   referral-sdk/       PHP / Composer  — backend: click store, matching, claims
@@ -297,7 +343,8 @@ deliberately: the EAS build link this used to point at expires after 30
 days, and did — a release asset doesn't. iOS has no equivalent link —
 internal distribution there needs a registered Apple Developer account and
 per-device UDID registration, so for now the iOS side is only reachable by
-building it yourself (see below).
+building it yourself (see below), or by watching it run in production in
+[See it working](#see-it-working) above.
 
 Otherwise, the fastest way to see the whole thing work locally, before
 installing anything for real. Three terminals. No PHP or database required
