@@ -383,6 +383,14 @@ recency score, why `/claim` requires a signed token instead of trusting the
 request, why the mobile SDK persists nothing to disk) is written up there
 with the problem it solved, in chronological order.
 
+**Design docs for work that isn't built yet** — written before the code,
+so the reasoning is reviewable while it's still cheap to change:
+
+| Doc | What it proposes |
+|---|---|
+| [`docs/app-scoping.md`](docs/app-scoping.md) | Letting one deployment serve several apps without cross-attributing between them — the fix for the one-app-per-deployment limit above |
+| [`docs/ios-deterministic-deferred-deep-linking.md`](docs/ios-deterministic-deferred-deep-linking.md) | The iOS clipboard handoff, as originally specced |
+
 **API/config reference** for a package you've already set up lives in that
 package's own README (`packages/*/README.md`) — the integration guides above
 are the walkthrough; the READMEs are what to come back to for a specific
