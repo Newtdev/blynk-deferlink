@@ -67,6 +67,14 @@ reasoning rather than filing the behaviour as a bug.
   matches/day, ten claims/hour out of the box, all configurable. They blunt
   casual abuse. They are not an anti-fraud engine, and a referral programme
   paying real money needs its own controls in `on_claim_callback`.
+- **One app per deployment.** Nothing in the schema records which app a
+  click belongs to, and `/match` scores every recent click regardless of
+  origin. Two apps sharing one backend can therefore cross-attribute — and
+  because the five non-recency signals sum to 85 against a threshold of 70,
+  two apps serving the same user base will do so routinely rather than
+  rarely. This is a correctness limit, not just a privacy one: the wrong
+  referrer gets paid. Run one deployment and database per app. Tracked in
+  `docs/decisions.md` #32.
 - **No Universal Links / App Links.** Deferred linking only; the README
   covers this gap against Branch and AppsFlyer.
 

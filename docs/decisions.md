@@ -1619,3 +1619,196 @@ isn't yet staffed to keep. The four packages sit at `1.0.0` locally; that
 version number is a placeholder and should not be read as a stability
 claim, and `0.x` would be the honest starting point if they were ever
 published.
+
+## 32. The deployed demo is single-tenant by construction — what sharing it would require — Proposed
+
+**What prompted this.** The demo backend
+(`referral-sdk-node.vercel.app`), the demo landing page
+(`referral-web-demo.vercel.app`) and the demo mobile app already form a
+complete, working loop — verified end to end against production on
+2026-09-15, 23 checks including reinstall attribution and claim replay
+rejection. That raises an obvious question: if the infrastructure already
+runs, could a developer just install the mobile SDK, point it at this
+deployment, share links on this domain, and have codes come back — no
+backend of their own at all?
+
+Mechanically, yes. It would appear to work on the first try. **That is
+precisely what makes it dangerous**, so this entry records why, before
+anyone is invited onto the shared deployment.
+
+### Finding 1: nothing in the system knows which app a click belongs to
+
+There is no `app_id`, `tenant_id`, `bundle_id` or `client_id` column in
+either backend's schema — checked in both
+`packages/referral-sdk-node/src/db/schema.ts` and
+`packages/referral-sdk/database/schema.sql`. The concept does not exist.
+
+`/match`'s candidate query filters on exactly two predicates:
+
+```ts
+gte(referralClicks.createdAt, windowStart)
+gt(referralClicks.expiresAt, new Date())
+```
+
+A time window and an expiry. Every recent unexpired click in the table is a
+candidate for every matching device, and the winner is decided purely by
+fingerprint score.
+
+**This is not a small leak, and the default weights say how large.** The
+five non-recency signals are `ip_match` 25, `device_model` 25,
+`screen_dimensions` 15, `timezone` 10, `language` 10 — summing to **85,
+against a `min_confidence` of 70** (the same sum #29 back-solved against,
+there to expose a timezone bug rather than a tenancy one). So two users of
+two *different* apps who share a carrier NAT
+address, carry the same phone model, and sit in the same country and locale
+score **85 before recency is considered at all** — over threshold on the
+stale-click edge of the window, and 100 for a fresh one.
+
+In a market where carrier NAT is normal and a handful of handset models
+dominate, that is not an edge case. It is the expected outcome for any two
+users who happen to look alike, and the consequence is that Developer B's
+new user is handed Developer A's referral code and the conversion is
+recorded against it. **Wrong attribution, with a reward budget attached.**
+
+Today this is unreachable because exactly one app uses the deployment. It
+becomes reachable on the day a second one does, which is why it is written
+down now rather than discovered later.
+
+### Finding 2: the landing page can only ever serve one app
+
+`appScheme` and the store URLs are deployment configuration
+(`packages/referral-web/src/types.ts`), not per-link data. Every link the
+demo serves deep-links to `myapp://` and falls back to the demo's own store
+entry. A second developer's links would route that developer's users into
+the first developer's app.
+
+### Why the existing click token cannot fix either one
+
+The natural instinct is that the signed token already flowing through the
+system could carry app identity. It cannot, for a structural reason worth
+recording so it isn't re-proposed:
+
+**the token is outbound.** `signClickToken()` mints
+`click_id.exp.hmac` *on the server*, at `/click` and again at a successful
+`/match`. `/click` cannot be scoped by a token that does not exist until
+after `/click` has run. `/match` accepts no token at all — it only returns
+one — so the token cannot constrain the candidate query, which is exactly
+where Finding 1 lives.
+
+`/claim` is the one endpoint that *receives* a token, so binding the app
+into the payload (`click_id.app_id.exp.hmac`) does work there, and is worth
+doing: it stops a token issued for one app being redeemed by another. But
+that is a second lock on a door that still has no handle. It is defence in
+depth, not the identification mechanism.
+
+### What identification actually requires
+
+An **inbound** public app identifier on every `/click`, `/match` and
+`/claim` — the shape of a Stripe publishable key. It lives in the mobile
+bundle and in the link URL, so it is public by nature, and that is
+acceptable: it *scopes* data, it does not *authorise* anything. Someone
+sending another app's id can pollute that app's click table, which is what
+per-app rate limits are for.
+
+### What hosting forces beyond identification
+
+This is the part that changes the shape of the project, and it has no
+partial version.
+
+Today rewards are distributed in `on_claim_callback`, which runs inside the
+same self-hosted backend that verified the claim — one trust domain. Hosted,
+those split: *this* server verifies, *their* server pays. They need to
+trust a result they did not compute, which requires a second, server-side
+secret plus either a signed webhook on a verified claim or a verify
+endpoint their backend calls. Two credentials, a delivery guarantee, and a
+retry story — none of which exist in any form today.
+
+### Scope, in two blocks
+
+The split matters more than the total, because the blocks differ in kind:
+
+*Correctness — required before a second app touches the deployment:*
+
+- `app_id` carried link → click → match, in both backends (parity, #23)
+- `/match` requires it and filters on it
+- an `apps` registry resolving scheme, store URLs and OG metadata per link,
+  so the landing page stops being single-app
+- `app_id` bound into the claim token
+
+*Product — only if this becomes an offering:*
+
+- issuing and rotating a public id and a secret key
+- signed webhook or verify endpoint for reward distribution
+- a registration surface (dashboard, or an authenticated API at minimum)
+
+The first block is roughly a week, doubled by landing on both backends, and
+the match-scoping change needs the revert-the-fix counter-check discipline
+#29 and #30 used — a test that passes against the buggy code proves
+nothing here.
+
+### Relationship to #31, stated plainly
+
+#31 argues hosted attribution is a dependency risk and that this project
+will not recreate it. A general hosted service contradicts that. A **shared
+sandbox** does not, provided it is described honestly: best-effort,
+rate-limited, short retention, no SLA, for evaluation and side projects,
+with production self-hosted. That is one coherent story — *self-host for
+production, sandbox to try it* — and it addresses #31's acknowledged cost,
+which is that a fork is a far worse first experience than an install.
+
+**Recommendation.** Do the correctness block, because it is a genuine
+defect the moment the deployment is shared and it is worth fixing whether
+or not a sandbox ever ships. Hold the product block until someone asks for
+it; hosting is a business commitment, not an engineering one, and the
+cheapest version of that experiment is a person offering to pay for it.
+
+**Do not share the deployment before the correctness block lands.** Until
+then, a second app on it produces silent cross-app mis-attribution — the
+one category of bug this project cannot ship, since every other guarantee
+it makes rests on attributing the right click to the right install.
+
+### Corroboration: the second app arrived internally, not publicly
+
+Recorded 2026-09-19, four days after the above. The predicted trigger —
+"the day a second app uses the deployment" — has materialised, and not in
+the form this entry anticipated.
+
+Sparkle is rolling out a second app, **Sparkle U18**, alongside the
+existing one. That changes two things about the analysis above.
+
+**First, it is no longer a hypothesis.** The entry was written about a
+shared *public* deployment. But nothing in Finding 1 depends on the second
+app belonging to a different organisation — it only requires two apps and
+one `referral_clicks` table. A single self-hoster running two of their own
+apps against one deployment reaches the identical defect without ever
+sharing anything with anyone. That is a materially wider blast radius than
+this entry originally claimed, and it means app scoping is not solely a
+prerequisite for hosting; it is a limit on the self-hosted model as
+documented in #31.
+
+**Second, this particular pair is close to the worst case the scoring
+engine can produce.** The 85-point non-recency floor assumed a coincidence:
+two strangers who happen to share a NAT address and a handset model. A
+consumer banking app and its under-18 companion do not need the
+coincidence. A parent and their child are in the same household, behind the
+same WiFi, in the same timezone and locale, plausibly on the same handset
+model — every non-recency signal aligned by the ordinary structure of the
+product rather than by chance. Where the generic case needs luck to
+cross-match, this pair needs luck *not* to.
+
+**Consequence for sequencing.** Rolling out any second app against a shared
+deployment requires the correctness block first, self-hosted or not. It
+also means a naive rollout of that block would break a live system: rows
+written before `app_id` exists carry no value for it, so a `/match` that
+starts filtering on `app_id` would render every pre-existing click
+unmatchable and silently kill attribution for users mid-funnel. The column
+has to arrive nullable, with filtering gated until existing rows are
+backfilled — the migration is the risky part here, not the query change.
+
+**Consequence for npm.** #31 defers registry publishing, and the adoption
+argument for reversing that is "install the SDK and it works against a
+backend you didn't have to deploy." That is the hosted path, so it inherits
+this entry in full. The ordering is therefore fixed and worth stating
+plainly: app scoping, then a shared backend that is safe to point at, then
+a published package that means something. Publishing first would ship an
+install whose happy path is the defect.
