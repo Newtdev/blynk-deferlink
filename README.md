@@ -299,51 +299,6 @@ internal distribution there needs a registered Apple Developer account and
 per-device UDID registration, so for now the iOS side is only reachable by
 building it yourself (see below).
 
-### The iOS path, running in production
-
-Since there's no iOS build to hand you, here is the whole thing happening
-instead — recorded off a real iPhone, on cellular, installing from the App
-Store. Not the demo app: this is [Sparkle](https://sparkle.ng)'s live
-production release, using this SDK.
-
-<!-- TODO(video): drag sparkle-ios-referral-demo.mp4 into a GitHub comment
-     box to get a user-attachments URL, then replace this whole block with:
-       https://github.com/user-attachments/assets/<id>
-     A bare URL on its own line is what GitHub turns into a player; a
-     markdown image link renders as a broken image instead. -->
-
-**▶ Video not embedded yet** — see [#28](https://github.com/Newtdev/blynk-deferlink/pull/28).
-
-Thirty-five seconds, one take, nothing sped up or cut:
-
-| | |
-| --- | --- |
-| 0:00 | A referral link, `sparkle.ng/referral/L82WDL` |
-| 0:06 | The landing page registers the click and starts its countdown |
-| 0:10 | App Store — a real download, not a prepared build |
-| 0:26 | First launch, onboarding |
-| **0:32** | **Referral screen: the field is empty, with a Paste button** |
-| **0:33** | **`L82WDL` is in the field. Paste becomes Continue** |
-
-That half-second is the entire point of the iOS deterministic tier. The
-code was written to the clipboard by the landing page moments before the
-App Store redirect, survived the install, and came back without a network
-call, a fingerprint guess, or the user typing anything.
-
-Two details worth watching for, because both are deliberate:
-
-- **The Paste button is enabled.** It only is when the clipboard genuinely
-  holds a valid payload, which means the handoff on the web side worked.
-  A disabled button is what a broken handoff looks like.
-- **No "pasted from Safari" banner appears.** That's `UIPasteControl`
-  doing its job — the user's tap authorises the read, so iOS doesn't have
-  to warn them about it. See [`docs/decisions.md`](docs/decisions.md) #18
-  for why this tier is a tap rather than an automatic read.
-
-The Android equivalent needs no video, because there is nothing to watch:
-the Play Install Referrer hands the code over before the app's first
-frame, so the field is simply populated on arrival.
-
 Otherwise, the fastest way to see the whole thing work locally, before
 installing anything for real. Three terminals. No PHP or database required
 — the mock backend covers it.
